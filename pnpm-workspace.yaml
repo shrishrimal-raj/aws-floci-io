@@ -2,3 +2,4 @@ packages:
   - "shared/*"
   - "implementation-by-spec/*"
   - "implementation-by-phases/*"
+  - "aws-cloudfolks/*/*/implementation"

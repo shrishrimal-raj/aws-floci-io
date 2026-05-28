@@ -1,0 +1,9 @@
+import { CloudWatchClient, DeleteAlarmsCommand, PutDashboardCommand, PutMetricAlarmCommand, PutMetricDataCommand } from "@aws-sdk/client-cloudwatch";
+import { client as defaultClient } from "../client.js";
+import { CloudWatchMetricsError } from "../errors.js";
+const fail=(op:string,e:unknown):never=>{throw new CloudWatchMetricsError(e instanceof Error&&e.name?e.name:"UNKNOWN",`CloudWatch Metrics ${op} failed`,e);};
+export async function putMetric(namespace:string,name:string,value:number,unit="Count",dimensions:Record<string,string>={},cw:CloudWatchClient=defaultClient){try{await cw.send(new PutMetricDataCommand({Namespace:namespace,MetricData:[{MetricName:name,Value:value,Unit:unit as any,Dimensions:Object.entries(dimensions).map(([Name,Value])=>({Name,Value}))}]}));}catch(e){fail("putMetric",e);}}
+export async function putAlarm(alarmName:string,namespace:string,metricName:string,threshold:number,cw:CloudWatchClient=defaultClient){try{await cw.send(new PutMetricAlarmCommand({AlarmName:alarmName,Namespace:namespace,MetricName:metricName,Statistic:"Sum",Period:60,EvaluationPeriods:1,Threshold:threshold,ComparisonOperator:"GreaterThanThreshold"}));}catch(e){fail("putAlarm",e);}}
+export async function putDashboard(name:string,widgets:unknown[]=[],cw:CloudWatchClient=defaultClient){try{await cw.send(new PutDashboardCommand({DashboardName:name,DashboardBody:JSON.stringify({widgets})}));}catch(e){fail("putDashboard",e);}}
+export async function deleteAlarms(names:string[],cw:CloudWatchClient=defaultClient){try{if(names.length) await cw.send(new DeleteAlarmsCommand({AlarmNames:names}));}catch(e){fail("deleteAlarms",e);}}
+export const emfMetric=(namespace:string,metrics:Record<string,number>,dimensions:Record<string,string>={})=>({...dimensions,...metrics,_aws:{Timestamp:Date.now(),CloudWatchMetrics:[{Namespace:namespace,Dimensions:[Object.keys(dimensions)],Metrics:Object.keys(metrics).map(Name=>({Name}))}]}});

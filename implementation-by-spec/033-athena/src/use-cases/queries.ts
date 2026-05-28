@@ -1,0 +1,10 @@
+import { AthenaClient, CreateWorkGroupCommand, DeleteWorkGroupCommand, GetQueryExecutionCommand, GetQueryResultsCommand, StartQueryExecutionCommand } from "@aws-sdk/client-athena";
+import { client as defaultClient } from "../client.js";
+import { AthenaError } from "../errors.js";
+const fail=(op:string,e:unknown):never=>{throw new AthenaError(e instanceof Error&&e.name?e.name:"UNKNOWN",`Athena ${op} failed`,e);};
+export async function createWorkGroup(name:string,outputLocation="s3://floci-athena-results/",athena:AthenaClient=defaultClient){try{await athena.send(new CreateWorkGroupCommand({Name:name,Configuration:{ResultConfiguration:{OutputLocation:outputLocation}}}));}catch(e){if(e instanceof Error&&e.name==="InvalidRequestException")return; fail("createWorkGroup",e);}}
+export async function startQuery(sql:string,database="default",outputLocation="s3://floci-athena-results/",workGroup?:string,athena:AthenaClient=defaultClient){try{return (await athena.send(new StartQueryExecutionCommand({QueryString:sql,QueryExecutionContext:{Database:database},ResultConfiguration:{OutputLocation:outputLocation},WorkGroup:workGroup}))).QueryExecutionId!;}catch(e){fail("startQuery",e);}}
+export async function getQueryExecution(id:string,athena:AthenaClient=defaultClient){try{return (await athena.send(new GetQueryExecutionCommand({QueryExecutionId:id}))).QueryExecution;}catch(e){fail("getQueryExecution",e);}}
+export async function getQueryResults(id:string,athena:AthenaClient=defaultClient){try{return (await athena.send(new GetQueryResultsCommand({QueryExecutionId:id}))).ResultSet?.Rows??[];}catch(e){fail("getQueryResults",e);}}
+export async function deleteWorkGroup(name:string|undefined,athena:AthenaClient=defaultClient){if(!name)return; try{await athena.send(new DeleteWorkGroupCommand({WorkGroup:name,RecursiveDeleteOption:true}));}catch(e){fail("deleteWorkGroup",e);}}
+export const createExternalTableSql=(table:string,location:string)=>`CREATE EXTERNAL TABLE IF NOT EXISTS ${table} (id string) STORED AS PARQUET LOCATION '${location}'`;

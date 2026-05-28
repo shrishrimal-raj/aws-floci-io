@@ -1,0 +1,10 @@
+import { CloudFormationClient, CreateChangeSetCommand, CreateStackCommand, DeleteStackCommand, DescribeStacksCommand, UpdateStackCommand } from "@aws-sdk/client-cloudformation";
+import { client as defaultClient } from "../client.js";
+import { CloudFormationError } from "../errors.js";
+const fail=(op:string,e:unknown):never=>{throw new CloudFormationError(e instanceof Error&&e.name?e.name:"UNKNOWN",`CloudFormation ${op} failed`,e);};
+export const s3BucketTemplate=(bucketName:string)=>JSON.stringify({AWSTemplateFormatVersion:"2010-09-09",Resources:{Bucket:{Type:"AWS::S3::Bucket",Properties:{BucketName:bucketName}}}});
+export async function createStack(name:string,templateBody:string,cf:CloudFormationClient=defaultClient){try{return (await cf.send(new CreateStackCommand({StackName:name,TemplateBody:templateBody,Capabilities:["CAPABILITY_NAMED_IAM"]}))).StackId;}catch(e){if(e instanceof Error&&e.name==="AlreadyExistsException")return name; fail("createStack",e);}}
+export async function updateStack(name:string,templateBody:string,cf:CloudFormationClient=defaultClient){try{return (await cf.send(new UpdateStackCommand({StackName:name,TemplateBody:templateBody,Capabilities:["CAPABILITY_NAMED_IAM"]}))).StackId;}catch(e){fail("updateStack",e);}}
+export async function describeStack(name:string,cf:CloudFormationClient=defaultClient){try{return (await cf.send(new DescribeStacksCommand({StackName:name}))).Stacks?.[0];}catch(e){fail("describeStack",e);}}
+export async function createChangeSet(name:string,stackName:string,templateBody:string,cf:CloudFormationClient=defaultClient){try{return (await cf.send(new CreateChangeSetCommand({ChangeSetName:name,StackName:stackName,TemplateBody:templateBody,ChangeSetType:"UPDATE",Capabilities:["CAPABILITY_NAMED_IAM"]}))).Id;}catch(e){fail("createChangeSet",e);}}
+export async function deleteStack(name:string|undefined,cf:CloudFormationClient=defaultClient){if(!name)return; try{await cf.send(new DeleteStackCommand({StackName:name}));}catch(e){fail("deleteStack",e);}}

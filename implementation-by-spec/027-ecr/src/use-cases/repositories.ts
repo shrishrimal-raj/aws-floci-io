@@ -1,0 +1,9 @@
+import { CreateRepositoryCommand, DeleteRepositoryCommand, DescribeImagesCommand, ECRClient, GetAuthorizationTokenCommand, PutLifecyclePolicyCommand } from "@aws-sdk/client-ecr";
+import { client as defaultClient } from "../client.js";
+import { ECRError } from "../errors.js";
+const fail=(op:string,e:unknown):never=>{throw new ECRError(e instanceof Error&&e.name?e.name:"UNKNOWN",`ECR ${op} failed`,e);};
+export async function createRepository(name:string,ecr:ECRClient=defaultClient){try{return (await ecr.send(new CreateRepositoryCommand({repositoryName:name,imageScanningConfiguration:{scanOnPush:true},imageTagMutability:"IMMUTABLE"}))).repository;}catch(e){if(e instanceof Error&&e.name==="RepositoryAlreadyExistsException")return; fail("createRepository",e);}}
+export async function putExpireUntaggedPolicy(name:string,days=7,ecr:ECRClient=defaultClient){try{await ecr.send(new PutLifecyclePolicyCommand({repositoryName:name,lifecyclePolicyText:JSON.stringify({rules:[{rulePriority:1,description:"expire untagged",selection:{tagStatus:"untagged",countType:"sinceImagePushed",countUnit:"days",countNumber:days},action:{type:"expire"}}]})}));}catch(e){fail("putExpireUntaggedPolicy",e);}}
+export async function listImages(name:string,ecr:ECRClient=defaultClient){try{return (await ecr.send(new DescribeImagesCommand({repositoryName:name}))).imageDetails??[];}catch(e){fail("listImages",e);}}
+export async function getDockerLogin(ecr:ECRClient=defaultClient){try{return (await ecr.send(new GetAuthorizationTokenCommand({}))).authorizationData?.[0];}catch(e){fail("getDockerLogin",e);}}
+export async function deleteRepository(name:string|undefined,ecr:ECRClient=defaultClient){if(!name)return; try{await ecr.send(new DeleteRepositoryCommand({repositoryName:name,force:true}));}catch(e){if(e instanceof Error&&e.name==="RepositoryNotFoundException")return; fail("deleteRepository",e);}}

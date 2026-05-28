@@ -1,0 +1,45 @@
+services:
+  floci:
+    image: ghcr.io/floci-io/floci:latest
+    container_name: floci
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,sqs,sns,dynamodb,lambda,apigateway,iam,sts,kms,secretsmanager,ssm,cloudwatch,logs,events,scheduler,pipes,stepfunctions,kinesis,firehose,ses,ecr,ecs,ec2,elbv2,route53,cloudformation,opensearch,athena,glue,backup,config,appconfig,transfer,cloudfront,resourcegroupstaggingapi
+      - DEBUG=0
+    volumes:
+      - "./.floci:/var/lib/floci"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_floci/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: floci-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=app
+
+  redis:
+    image: redis:7-alpine
+    container_name: floci-redis
+    ports:
+      - "6379:6379"
+
+  opensearch:
+    image: opensearchproject/opensearch:2.15.0
+    container_name: floci-opensearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin#12345
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"

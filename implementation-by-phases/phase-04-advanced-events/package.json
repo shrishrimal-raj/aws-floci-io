@@ -1,0 +1,27 @@
+{
+  "name": "@floci-lab/phase-04",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "commerce:demo": "tsx major-projects/event-driven-commerce-core/src/demo.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb-streams": "^3.700.0",
+    "@aws-sdk/client-eventbridge": "^3.700.0",
+    "@aws-sdk/client-firehose": "^3.700.0",
+    "@aws-sdk/client-kinesis": "^3.700.0",
+    "@aws-sdk/client-pipes": "^3.700.0",
+    "@aws-sdk/client-scheduler": "^3.700.0",
+    "@aws-sdk/client-sfn": "^3.700.0",
+    "@floci-lab/aws-clients": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

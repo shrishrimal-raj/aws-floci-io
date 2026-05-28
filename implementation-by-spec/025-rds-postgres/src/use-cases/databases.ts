@@ -1,0 +1,9 @@
+import { CreateDBInstanceCommand, DeleteDBInstanceCommand, DescribeDBInstancesCommand, RDSClient } from "@aws-sdk/client-rds";
+import { client as defaultClient } from "../client.js";
+import { RDSPostgresError } from "../errors.js";
+const fail=(op:string,e:unknown):never=>{throw new RDSPostgresError(e instanceof Error&&e.name?e.name:"UNKNOWN",`RDS Postgres ${op} failed`,e);};
+export interface PostgresInstanceSpec{identifier:string;dbName?:string;username?:string;password?:string;instanceClass?:string;allocatedStorageGb?:number;}
+export async function createPostgresInstance(spec:PostgresInstanceSpec,rds:RDSClient=defaultClient){try{return await rds.send(new CreateDBInstanceCommand({DBInstanceIdentifier:spec.identifier,Engine:"postgres",DBName:spec.dbName??"app",MasterUsername:spec.username??"postgres",MasterUserPassword:spec.password??"postgres123",DBInstanceClass:spec.instanceClass??"db.t4g.micro",AllocatedStorage:spec.allocatedStorageGb??20,PubliclyAccessible:false}));}catch(e){if(e instanceof Error&&e.name==="DBInstanceAlreadyExistsFault")return describePostgresInstance(spec.identifier,rds); fail("createPostgresInstance",e);}}
+export async function describePostgresInstance(identifier:string,rds:RDSClient=defaultClient){try{return (await rds.send(new DescribeDBInstancesCommand({DBInstanceIdentifier:identifier}))).DBInstances?.[0];}catch(e){fail("describePostgresInstance",e);}}
+export async function deletePostgresInstance(identifier:string|undefined,rds:RDSClient=defaultClient){if(!identifier)return; try{await rds.send(new DeleteDBInstanceCommand({DBInstanceIdentifier:identifier,SkipFinalSnapshot:true,DeleteAutomatedBackups:true}));}catch(e){if(e instanceof Error&&e.name==="DBInstanceNotFoundFault")return; fail("deletePostgresInstance",e);}}
+export const connectionString=(host:string,db="app",user="postgres",password="postgres",port=5432)=>`postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${db}`;

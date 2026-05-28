@@ -1,0 +1,11 @@
+import { CreateSecretCommand, DeleteSecretCommand, GetSecretValueCommand, PutSecretValueCommand, SecretsManagerClient, UpdateSecretCommand } from "@aws-sdk/client-secrets-manager";
+import { client as defaultClient } from "../client.js";
+import { SecretsManagerError } from "../errors.js";
+const err=(op:string,e:unknown):never=>{throw new SecretsManagerError(e instanceof Error&&e.name?e.name:"UNKNOWN",`Secrets Manager ${op} failed`,e);};
+export async function createJsonSecret(name:string, value:unknown, sm:SecretsManagerClient=defaultClient){try{return (await sm.send(new CreateSecretCommand({Name:name,SecretString:JSON.stringify(value)}))).ARN!;}catch(e){if(e instanceof Error&&e.name==="ResourceExistsException") return name; err("createJsonSecret",e);}}
+export async function getSecretString(name:string, sm:SecretsManagerClient=defaultClient){try{return (await sm.send(new GetSecretValueCommand({SecretId:name}))).SecretString;}catch(e){err("getSecretString",e);}}
+export async function getJsonSecret<T=unknown>(name:string, sm:SecretsManagerClient=defaultClient):Promise<T>{const s=await getSecretString(name,sm); if(!s) throw new SecretsManagerError("EMPTY_SECRET",`Secret ${name} has no string value`); return JSON.parse(s) as T;}
+export async function putJsonSecretValue(name:string, value:unknown, sm:SecretsManagerClient=defaultClient){try{return (await sm.send(new PutSecretValueCommand({SecretId:name,SecretString:JSON.stringify(value)}))).VersionId;}catch(e){err("putJsonSecretValue",e);}}
+export async function updateJsonSecret(name:string, value:unknown, sm:SecretsManagerClient=defaultClient){try{await sm.send(new UpdateSecretCommand({SecretId:name,SecretString:JSON.stringify(value)}));}catch(e){err("updateJsonSecret",e);}}
+export async function deleteSecret(name:string|undefined, sm:SecretsManagerClient=defaultClient){if(!name)return; try{await sm.send(new DeleteSecretCommand({SecretId:name,ForceDeleteWithoutRecovery:true}));}catch(e){if(e instanceof Error&&e.name==="ResourceNotFoundException")return; err("deleteSecret",e);}}
+export function redactSecret<T extends Record<string,unknown>>(secret:T){return Object.fromEntries(Object.keys(secret).map(k=>[k,"***REDACTED***"]));}

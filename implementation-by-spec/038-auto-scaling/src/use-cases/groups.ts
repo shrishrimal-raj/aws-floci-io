@@ -1,0 +1,9 @@
+import { AutoScalingClient, CreateAutoScalingGroupCommand, DeleteAutoScalingGroupCommand, PutScalingPolicyCommand, UpdateAutoScalingGroupCommand } from "@aws-sdk/client-auto-scaling";
+import { client as defaultClient } from "../client.js";
+import { AutoScalingError } from "../errors.js";
+const fail=(op:string,e:unknown):never=>{throw new AutoScalingError(e instanceof Error&&e.name?e.name:"UNKNOWN",`Auto Scaling ${op} failed`,e);};
+export async function createGroup(name:string,launchTemplateId:string,subnets:string[],asg:AutoScalingClient=defaultClient){try{await asg.send(new CreateAutoScalingGroupCommand({AutoScalingGroupName:name,MinSize:1,MaxSize:3,DesiredCapacity:1,VPCZoneIdentifier:subnets.join(","),LaunchTemplate:{LaunchTemplateId:launchTemplateId,Version:"$Latest"}}));}catch(e){fail("createGroup",e);}}
+export async function updateCapacity(name:string,min:number,max:number,desired:number,asg:AutoScalingClient=defaultClient){try{await asg.send(new UpdateAutoScalingGroupCommand({AutoScalingGroupName:name,MinSize:min,MaxSize:max,DesiredCapacity:desired}));}catch(e){fail("updateCapacity",e);}}
+export async function putTargetTrackingPolicy(name:string,groupName:string,targetValue=50,asg:AutoScalingClient=defaultClient){try{return (await asg.send(new PutScalingPolicyCommand({PolicyName:name,AutoScalingGroupName:groupName,PolicyType:"TargetTrackingScaling",TargetTrackingConfiguration:{PredefinedMetricSpecification:{PredefinedMetricType:"ASGAverageCPUUtilization"},TargetValue:targetValue}}))).PolicyARN;}catch(e){fail("putTargetTrackingPolicy",e);}}
+export async function deleteGroup(name:string|undefined,asg:AutoScalingClient=defaultClient){if(!name)return; try{await asg.send(new DeleteAutoScalingGroupCommand({AutoScalingGroupName:name,ForceDelete:true}));}catch(e){fail("deleteGroup",e);}}
+export const capacity=(min:number,desired:number,max:number)=>({min,desired,max});

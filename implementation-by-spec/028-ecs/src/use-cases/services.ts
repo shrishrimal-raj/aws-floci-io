@@ -1,0 +1,9 @@
+import { CreateClusterCommand, DeleteClusterCommand, DeregisterTaskDefinitionCommand, ECSClient, RegisterTaskDefinitionCommand, RunTaskCommand } from "@aws-sdk/client-ecs";
+import { client as defaultClient } from "../client.js";
+import { ECSError } from "../errors.js";
+const fail=(op:string,e:unknown):never=>{throw new ECSError(e instanceof Error&&e.name?e.name:"UNKNOWN",`ECS ${op} failed`,e);};
+export async function createCluster(name:string,ecs:ECSClient=defaultClient){try{return (await ecs.send(new CreateClusterCommand({clusterName:name}))).cluster;}catch(e){fail("createCluster",e);}}
+export async function registerFargateTask(family:string,image:string,ecs:ECSClient=defaultClient){try{return (await ecs.send(new RegisterTaskDefinitionCommand({family,requiresCompatibilities:["FARGATE"],networkMode:"awsvpc",cpu:"256",memory:"512",executionRoleArn:"arn:aws:iam::000000000000:role/ecsTaskExecutionRole",containerDefinitions:[{name:"app",image,essential:true,portMappings:[{containerPort:3000}]}]}))).taskDefinition;}catch(e){fail("registerFargateTask",e);}}
+export async function runFargateTask(cluster:string,taskDefinition:string,subnetIds:string[],securityGroupIds:string[],ecs:ECSClient=defaultClient){try{return await ecs.send(new RunTaskCommand({cluster,taskDefinition,launchType:"FARGATE",networkConfiguration:{awsvpcConfiguration:{subnets:subnetIds,securityGroups:securityGroupIds,assignPublicIp:"ENABLED"}}}));}catch(e){fail("runFargateTask",e);}}
+export async function deregisterTaskDefinition(arn:string|undefined,ecs:ECSClient=defaultClient){if(!arn)return; try{await ecs.send(new DeregisterTaskDefinitionCommand({taskDefinition:arn}));}catch(e){fail("deregisterTaskDefinition",e);}}
+export async function deleteCluster(name:string|undefined,ecs:ECSClient=defaultClient){if(!name)return; try{await ecs.send(new DeleteClusterCommand({cluster:name}));}catch(e){if(e instanceof Error&&e.name==="ClusterNotFoundException")return; fail("deleteCluster",e);}}

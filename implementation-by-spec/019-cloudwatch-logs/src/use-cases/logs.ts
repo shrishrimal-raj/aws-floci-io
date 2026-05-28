@@ -1,0 +1,11 @@
+import { CloudWatchLogsClient, CreateLogGroupCommand, CreateLogStreamCommand, DeleteLogGroupCommand, FilterLogEventsCommand, PutLogEventsCommand, PutRetentionPolicyCommand } from "@aws-sdk/client-cloudwatch-logs";
+import { client as defaultClient } from "../client.js";
+import { CloudWatchLogsError } from "../errors.js";
+const fail=(op:string,e:unknown):never=>{throw new CloudWatchLogsError(e instanceof Error&&e.name?e.name:"UNKNOWN",`CloudWatch Logs ${op} failed`,e);};
+export async function createLogGroup(name:string,logs:CloudWatchLogsClient=defaultClient){try{await logs.send(new CreateLogGroupCommand({logGroupName:name}));}catch(e){if(e instanceof Error&&e.name==="ResourceAlreadyExistsException")return; fail("createLogGroup",e);}}
+export async function createLogStream(group:string,stream:string,logs:CloudWatchLogsClient=defaultClient){try{await logs.send(new CreateLogStreamCommand({logGroupName:group,logStreamName:stream}));}catch(e){if(e instanceof Error&&e.name==="ResourceAlreadyExistsException")return; fail("createLogStream",e);}}
+export async function putRetentionDays(group:string,days:number,logs:CloudWatchLogsClient=defaultClient){try{await logs.send(new PutRetentionPolicyCommand({logGroupName:group,retentionInDays:days}));}catch(e){fail("putRetentionDays",e);}}
+export async function putJsonLog(group:string,stream:string,event:unknown,logs:CloudWatchLogsClient=defaultClient){try{await logs.send(new PutLogEventsCommand({logGroupName:group,logStreamName:stream,logEvents:[{timestamp:Date.now(),message:JSON.stringify(event)}]}));}catch(e){fail("putJsonLog",e);}}
+export async function filterLogs(group:string,pattern:string,logs:CloudWatchLogsClient=defaultClient){try{return (await logs.send(new FilterLogEventsCommand({logGroupName:group,filterPattern:pattern}))).events??[];}catch(e){fail("filterLogs",e);}}
+export async function deleteLogGroup(group:string|undefined,logs:CloudWatchLogsClient=defaultClient){if(!group)return; try{await logs.send(new DeleteLogGroupCommand({logGroupName:group}));}catch(e){if(e instanceof Error&&e.name==="ResourceNotFoundException")return; fail("deleteLogGroup",e);}}
+export const structuredLog=(level:string,message:string,fields:Record<string,unknown>={})=>({level,message,time:new Date().toISOString(),...fields});

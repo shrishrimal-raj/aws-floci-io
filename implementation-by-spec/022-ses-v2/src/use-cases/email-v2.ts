@@ -1,0 +1,9 @@
+import { CreateConfigurationSetCommand, CreateContactListCommand, DeleteConfigurationSetCommand, DeleteContactListCommand, SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import { client as defaultClient } from "../client.js";
+import { SESv2Error } from "../errors.js";
+const fail=(op:string,e:unknown):never=>{throw new SESv2Error(e instanceof Error&&e.name?e.name:"UNKNOWN",`SES v2 ${op} failed`,e);};
+export async function createConfigurationSet(name:string,ses:SESv2Client=defaultClient){try{await ses.send(new CreateConfigurationSetCommand({ConfigurationSetName:name}));}catch(e){if(e instanceof Error&&e.name==="AlreadyExistsException")return; fail("createConfigurationSet",e);}}
+export async function createContactList(name:string,ses:SESv2Client=defaultClient){try{await ses.send(new CreateContactListCommand({ContactListName:name}));}catch(e){if(e instanceof Error&&e.name==="AlreadyExistsException")return; fail("createContactList",e);}}
+export async function sendEmailV2(from:string,to:string[],subject:string,text:string,configurationSetName?:string,ses:SESv2Client=defaultClient){try{return (await ses.send(new SendEmailCommand({FromEmailAddress:from,Destination:{ToAddresses:to},Content:{Simple:{Subject:{Data:subject},Body:{Text:{Data:text}}}},ConfigurationSetName:configurationSetName}))).MessageId;}catch(e){fail("sendEmailV2",e);}}
+export async function deleteConfigurationSet(name:string|undefined,ses:SESv2Client=defaultClient){if(!name)return; try{await ses.send(new DeleteConfigurationSetCommand({ConfigurationSetName:name}));}catch(e){if(e instanceof Error&&e.name==="NotFoundException")return; fail("deleteConfigurationSet",e);}}
+export async function deleteContactList(name:string|undefined,ses:SESv2Client=defaultClient){if(!name)return; try{await ses.send(new DeleteContactListCommand({ContactListName:name}));}catch(e){if(e instanceof Error&&e.name==="NotFoundException")return; fail("deleteContactList",e);}}

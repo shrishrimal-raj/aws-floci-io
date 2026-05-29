@@ -8,7 +8,12 @@
     "test:watch": "vitest",
     "setup": "tsx scripts/setup.ts",
     "seed": "tsx scripts/seed.ts",
-    "cleanup": "tsx scripts/cleanup.ts"
+    "cleanup": "tsx scripts/cleanup.ts",
+    "example:basic": "tsx src/examples/basic-rest-api.ts",
+    "example:orders": "tsx src/examples/enterprise-order-api.ts",
+    "example:events": "tsx src/examples/event-driven-contract-api.ts",
+    "example:dr": "tsx src/examples/compliance-dr-runbook.ts",
+    "example:observability": "tsx src/examples/observability-cost-checklist.ts"
   },
   "dependencies": {
     "@aws-sdk/client-api-gateway": "^3.700.0",

@@ -62,8 +62,48 @@ export interface ProcessOneMessageResult {
   messageId?: string;
 }
 
+export interface ProcessMessagesResult {
+  received: number;
+  processed: number;
+  deleted: number;
+  failed: number;
+}
+
+export interface QueueAuditEvent {
+  eventId: string;
+  timestamp: string;
+  queueUrl: string;
+  messageId?: string;
+  action: string;
+  outcome: "SUCCESS" | "RETRY" | "DLQ" | "ERROR";
+  traceId?: string;
+  tenantId?: string;
+  reason?: string;
+}
+
+export interface QueueMetricsSnapshot {
+  queueUrl: string;
+  visible: number;
+  notVisible: number;
+  delayed: number;
+  backlog: number;
+  alarmHints: string[];
+}
+
+export interface SqsRequestCostEstimateInput {
+  requests: number;
+  freeTierRequests?: number;
+  usdPerMillionRequests?: number;
+}
+
+export interface SqsRequestCostEstimate {
+  billableRequests: number;
+  requestUsd: number;
+}
+
 function awsErrorName(error: unknown): string {
-  if (error instanceof SQSError && error.cause instanceof Error) return error.cause.name;
+  if (error instanceof SQSError && error.cause instanceof Error)
+    return error.cause.name;
   return error instanceof Error ? error.name : "";
 }
 
@@ -81,11 +121,15 @@ function toAttributes(input: CreateQueueInput): Record<string, string> {
     attributes.MessageRetentionPeriod = String(input.messageRetentionSeconds);
   }
   if (input.receiveWaitTimeSeconds !== undefined) {
-    attributes.ReceiveMessageWaitTimeSeconds = String(input.receiveWaitTimeSeconds);
+    attributes.ReceiveMessageWaitTimeSeconds = String(
+      input.receiveWaitTimeSeconds,
+    );
   }
   if (input.fifo) {
     attributes.FifoQueue = "true";
-    attributes.ContentBasedDeduplication = String(input.contentBasedDeduplication ?? true);
+    attributes.ContentBasedDeduplication = String(
+      input.contentBasedDeduplication ?? true,
+    );
   }
   if (input.redrivePolicy) {
     attributes.RedrivePolicy = JSON.stringify({
@@ -106,15 +150,92 @@ function toReceived(message: Message): ReceivedQueueMessage {
 }
 
 /**
+ * Parse and validate a JSON queue envelope produced by sendJsonMessage.
+ *
+ * @example
+ * const envelope = parseJsonEnvelope<{ orderId: string }>(message.body);
+ */
+export function parseJsonEnvelope<TPayload>(
+  body: string | undefined,
+): QueueMessageEnvelope<TPayload> {
+  if (!body) throw new SQSError("VALIDATION", "message body is required");
+  const value = JSON.parse(body) as Partial<QueueMessageEnvelope<TPayload>>;
+  if (!value.type || !value.createdAt || value.payload === undefined) {
+    throw new SQSError(
+      "VALIDATION",
+      "message body is not a QueueMessageEnvelope",
+    );
+  }
+  return value as QueueMessageEnvelope<TPayload>;
+}
+
+/**
+ * Build a stable idempotency key for duplicate-safe workers.
+ * Prefer domain IDs; fall back to message ID only when no domain key exists.
+ *
+ * @example
+ * const key = messageIdempotencyKey("order.created", "tenant-a", "order-1");
+ */
+export function messageIdempotencyKey(
+  type: string,
+  tenantId: string,
+  domainId: string,
+): string {
+  return ["sqs", type, tenantId, domainId]
+    .map((part) => part.trim().replace(/[^a-zA-Z0-9._:-]+/g, "-"))
+    .join("#");
+}
+
+/**
+ * Build a structured audit event for queue processing logs or an audit topic.
+ *
+ * @example
+ * const audit = createQueueAuditEvent({ queueUrl, action: "OrderProcessed", outcome: "SUCCESS" });
+ */
+export function createQueueAuditEvent(
+  input: Omit<QueueAuditEvent, "eventId" | "timestamp">,
+): QueueAuditEvent {
+  return {
+    eventId: `sqs-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    timestamp: new Date().toISOString(),
+    ...input,
+  };
+}
+
+/**
+ * Estimate SQS API request cost. Defaults are illustrative; verify live AWS Pricing before production use.
+ *
+ * @example
+ * estimateSqsRequestCost({ requests: 25_000_000 });
+ */
+export function estimateSqsRequestCost(
+  input: SqsRequestCostEstimateInput,
+): SqsRequestCostEstimate {
+  const billableRequests = Math.max(
+    0,
+    input.requests - (input.freeTierRequests ?? 1_000_000),
+  );
+  const requestUsd =
+    (billableRequests / 1_000_000) * (input.usdPerMillionRequests ?? 0.4);
+  return { billableRequests, requestUsd };
+}
+
+/**
  * Create a standard or FIFO queue with production attributes.
  *
  * @example
  * const queueUrl = await createQueue({ name: "orders", receiveWaitTimeSeconds: 10 });
  */
-export async function createQueue(input: CreateQueueInput, sqs: SQSClient = defaultClient): Promise<string> {
+export async function createQueue(
+  input: CreateQueueInput,
+  sqs: SQSClient = defaultClient,
+): Promise<string> {
   try {
     const result = await sqs.send(
-      new CreateQueueCommand({ QueueName: input.name, Attributes: toAttributes(input) })
+      new CreateQueueCommand({
+        QueueName: input.name,
+        Attributes: toAttributes(input),
+      }),
     );
     if (!result.QueueUrl) throw new Error("CreateQueue returned no QueueUrl");
     return result.QueueUrl;
@@ -129,7 +250,10 @@ export async function createQueue(input: CreateQueueInput, sqs: SQSClient = defa
  * @example
  * const queueUrl = await getQueueUrl("orders");
  */
-export async function getQueueUrl(name: string, sqs: SQSClient = defaultClient): Promise<string | undefined> {
+export async function getQueueUrl(
+  name: string,
+  sqs: SQSClient = defaultClient,
+): Promise<string | undefined> {
   try {
     const result = await sqs.send(new GetQueueUrlCommand({ QueueName: name }));
     return result.QueueUrl;
@@ -145,10 +269,16 @@ export async function getQueueUrl(name: string, sqs: SQSClient = defaultClient):
  * @example
  * const arn = await getQueueArn(queueUrl);
  */
-export async function getQueueArn(queueUrl: string, sqs: SQSClient = defaultClient): Promise<string> {
+export async function getQueueArn(
+  queueUrl: string,
+  sqs: SQSClient = defaultClient,
+): Promise<string> {
   try {
     const result = await sqs.send(
-      new GetQueueAttributesCommand({ QueueUrl: queueUrl, AttributeNames: ["QueueArn"] })
+      new GetQueueAttributesCommand({
+        QueueUrl: queueUrl,
+        AttributeNames: ["QueueArn"],
+      }),
     );
     const arn = result.Attributes?.QueueArn;
     if (!arn) throw new Error("QueueArn missing");
@@ -167,13 +297,19 @@ export async function getQueueArn(queueUrl: string, sqs: SQSClient = defaultClie
 export async function createQueueWithDlq(
   name: string,
   maxReceiveCount = 3,
-  sqs: SQSClient = defaultClient
+  sqs: SQSClient = defaultClient,
 ): Promise<QueuePair> {
   const deadLetterQueueUrl = await createQueue({ name: `${name}-dlq` }, sqs);
   const deadLetterQueueArn = await getQueueArn(deadLetterQueueUrl, sqs);
   const queueUrl = await createQueue(
-    { name, redrivePolicy: { deadLetterTargetArn: deadLetterQueueArn, maxReceiveCount } },
-    sqs
+    {
+      name,
+      redrivePolicy: {
+        deadLetterTargetArn: deadLetterQueueArn,
+        maxReceiveCount,
+      },
+    },
+    sqs,
   );
   return { queueUrl, deadLetterQueueUrl, deadLetterQueueArn };
 }
@@ -184,7 +320,10 @@ export async function createQueueWithDlq(
  * @example
  * await sendMessage({ queueUrl, body: JSON.stringify({ orderId: "o1" }) });
  */
-export async function sendMessage(input: SendQueueMessageInput, sqs: SQSClient = defaultClient): Promise<string> {
+export async function sendMessage(
+  input: SendQueueMessageInput,
+  sqs: SQSClient = defaultClient,
+): Promise<string> {
   try {
     const result = await sqs.send(
       new SendMessageCommand({
@@ -194,7 +333,7 @@ export async function sendMessage(input: SendQueueMessageInput, sqs: SQSClient =
         MessageGroupId: input.groupId,
         MessageDeduplicationId: input.deduplicationId,
         MessageAttributes: input.attributes,
-      })
+      }),
     );
     if (!result.MessageId) throw new Error("SendMessage returned no MessageId");
     return result.MessageId;
@@ -214,7 +353,7 @@ export async function sendJsonMessage<TPayload>(
   type: string,
   payload: TPayload,
   traceId?: string,
-  sqs: SQSClient = defaultClient
+  sqs: SQSClient = defaultClient,
 ): Promise<string> {
   const envelope: QueueMessageEnvelope<TPayload> = {
     type,
@@ -229,10 +368,12 @@ export async function sendJsonMessage<TPayload>(
       body: JSON.stringify(envelope),
       attributes: {
         eventType: { DataType: "String", StringValue: type },
-        ...(traceId && { traceId: { DataType: "String", StringValue: traceId } }),
+        ...(traceId && {
+          traceId: { DataType: "String", StringValue: traceId },
+        }),
       },
     },
-    sqs
+    sqs,
   );
 }
 
@@ -247,7 +388,7 @@ export async function sendFifoMessage<TPayload>(
   groupId: string,
   deduplicationId: string,
   payload: TPayload,
-  sqs: SQSClient = defaultClient
+  sqs: SQSClient = defaultClient,
 ): Promise<string> {
   return sendMessage(
     {
@@ -256,7 +397,7 @@ export async function sendFifoMessage<TPayload>(
       groupId,
       deduplicationId,
     },
-    sqs
+    sqs,
   );
 }
 
@@ -269,16 +410,23 @@ export async function sendFifoMessage<TPayload>(
 export async function sendMessageBatch(
   queueUrl: string,
   bodies: string[],
-  sqs: SQSClient = defaultClient
+  sqs: SQSClient = defaultClient,
 ): Promise<string[]> {
   try {
     const result = await sqs.send(
       new SendMessageBatchCommand({
         QueueUrl: queueUrl,
-        Entries: bodies.map((body, index) => ({ Id: String(index), MessageBody: body })),
-      })
+        Entries: bodies.map((body, index) => ({
+          Id: String(index),
+          MessageBody: body,
+        })),
+      }),
     );
-    return result.Successful?.map((entry) => entry.MessageId).filter((id): id is string => Boolean(id)) ?? [];
+    return (
+      result.Successful?.map((entry) => entry.MessageId).filter(
+        (id): id is string => Boolean(id),
+      ) ?? []
+    );
   } catch (error) {
     wrapError("sendMessageBatch", error);
   }
@@ -294,7 +442,7 @@ export async function receiveMessages(
   queueUrl: string,
   maxMessages = 1,
   waitTimeSeconds = 1,
-  sqs: SQSClient = defaultClient
+  sqs: SQSClient = defaultClient,
 ): Promise<ReceivedQueueMessage[]> {
   try {
     const result = await sqs.send(
@@ -304,7 +452,7 @@ export async function receiveMessages(
         WaitTimeSeconds: waitTimeSeconds,
         AttributeNames: ["All"],
         MessageAttributeNames: ["All"],
-      })
+      }),
     );
     return result.Messages?.map(toReceived) ?? [];
   } catch (error) {
@@ -321,10 +469,15 @@ export async function receiveMessages(
 export async function deleteMessage(
   queueUrl: string,
   receiptHandle: string,
-  sqs: SQSClient = defaultClient
+  sqs: SQSClient = defaultClient,
 ): Promise<void> {
   try {
-    await sqs.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: receiptHandle }));
+    await sqs.send(
+      new DeleteMessageCommand({
+        QueueUrl: queueUrl,
+        ReceiptHandle: receiptHandle,
+      }),
+    );
   } catch (error) {
     wrapError("deleteMessage", error);
   }
@@ -340,7 +493,7 @@ export async function changeMessageVisibility(
   queueUrl: string,
   receiptHandle: string,
   visibilityTimeoutSeconds: number,
-  sqs: SQSClient = defaultClient
+  sqs: SQSClient = defaultClient,
 ): Promise<void> {
   try {
     await sqs.send(
@@ -348,7 +501,7 @@ export async function changeMessageVisibility(
         QueueUrl: queueUrl,
         ReceiptHandle: receiptHandle,
         VisibilityTimeout: visibilityTimeoutSeconds,
-      })
+      }),
     );
   } catch (error) {
     wrapError("changeMessageVisibility", error);
@@ -364,7 +517,7 @@ export async function changeMessageVisibility(
 export async function processOneMessage(
   queueUrl: string,
   handler: (message: ReceivedQueueMessage) => Promise<void>,
-  sqs: SQSClient = defaultClient
+  sqs: SQSClient = defaultClient,
 ): Promise<ProcessOneMessageResult> {
   const [message] = await receiveMessages(queueUrl, 1, 1, sqs);
   if (!message) return { processed: false, deleted: false };
@@ -380,6 +533,48 @@ export async function processOneMessage(
 }
 
 /**
+ * Process a small batch. Successful messages are deleted; failed messages remain for retry/DLQ.
+ *
+ * @example
+ * await processMessageBatch(queueUrl, async (message) => process(JSON.parse(message.body ?? "{}")));
+ */
+export async function processMessageBatch(
+  queueUrl: string,
+  handler: (message: ReceivedQueueMessage) => Promise<void>,
+  maxMessages = 10,
+  waitTimeSeconds = 5,
+  sqs: SQSClient = defaultClient,
+): Promise<ProcessMessagesResult> {
+  const messages = await receiveMessages(
+    queueUrl,
+    maxMessages,
+    waitTimeSeconds,
+    sqs,
+  );
+  const result: ProcessMessagesResult = {
+    received: messages.length,
+    processed: 0,
+    deleted: 0,
+    failed: 0,
+  };
+
+  for (const message of messages) {
+    try {
+      await handler(message);
+      result.processed += 1;
+      if (message.receiptHandle) {
+        await deleteMessage(queueUrl, message.receiptHandle, sqs);
+        result.deleted += 1;
+      }
+    } catch {
+      result.failed += 1;
+    }
+  }
+
+  return result;
+}
+
+/**
  * Read approximate visible, in-flight, and delayed message counts.
  *
  * @example
@@ -387,7 +582,7 @@ export async function processOneMessage(
  */
 export async function getApproximateQueueCounts(
   queueUrl: string,
-  sqs: SQSClient = defaultClient
+  sqs: SQSClient = defaultClient,
 ): Promise<{ visible: number; notVisible: number; delayed: number }> {
   try {
     const names: QueueAttributeName[] = [
@@ -395,15 +590,45 @@ export async function getApproximateQueueCounts(
       "ApproximateNumberOfMessagesNotVisible",
       "ApproximateNumberOfMessagesDelayed",
     ];
-    const result = await sqs.send(new GetQueueAttributesCommand({ QueueUrl: queueUrl, AttributeNames: names }));
+    const result = await sqs.send(
+      new GetQueueAttributesCommand({
+        QueueUrl: queueUrl,
+        AttributeNames: names,
+      }),
+    );
     return {
       visible: Number(result.Attributes?.ApproximateNumberOfMessages ?? 0),
-      notVisible: Number(result.Attributes?.ApproximateNumberOfMessagesNotVisible ?? 0),
-      delayed: Number(result.Attributes?.ApproximateNumberOfMessagesDelayed ?? 0),
+      notVisible: Number(
+        result.Attributes?.ApproximateNumberOfMessagesNotVisible ?? 0,
+      ),
+      delayed: Number(
+        result.Attributes?.ApproximateNumberOfMessagesDelayed ?? 0,
+      ),
     };
   } catch (error) {
     wrapError("getApproximateQueueCounts", error);
   }
+}
+
+/**
+ * Read queue counts and produce alarm hints for observability examples.
+ *
+ * @example
+ * const snapshot = await getQueueMetricsSnapshot(queueUrl, { backlogWarning: 100 });
+ */
+export async function getQueueMetricsSnapshot(
+  queueUrl: string,
+  thresholds: { backlogWarning?: number; inFlightWarning?: number } = {},
+  sqs: SQSClient = defaultClient,
+): Promise<QueueMetricsSnapshot> {
+  const counts = await getApproximateQueueCounts(queueUrl, sqs);
+  const backlog = counts.visible + counts.notVisible + counts.delayed;
+  const alarmHints: string[] = [];
+  if (backlog >= (thresholds.backlogWarning ?? 1000))
+    alarmHints.push("BacklogHigh");
+  if (counts.notVisible >= (thresholds.inFlightWarning ?? 100))
+    alarmHints.push("InFlightHigh");
+  return { queueUrl, ...counts, backlog, alarmHints };
 }
 
 /**
@@ -412,7 +637,10 @@ export async function getApproximateQueueCounts(
  * @example
  * await purgeQueue(queueUrl);
  */
-export async function purgeQueue(queueUrl: string, sqs: SQSClient = defaultClient): Promise<void> {
+export async function purgeQueue(
+  queueUrl: string,
+  sqs: SQSClient = defaultClient,
+): Promise<void> {
   try {
     await sqs.send(new PurgeQueueCommand({ QueueUrl: queueUrl }));
   } catch (error) {
@@ -426,7 +654,10 @@ export async function purgeQueue(queueUrl: string, sqs: SQSClient = defaultClien
  * @example
  * await deleteQueue(queueUrl);
  */
-export async function deleteQueue(queueUrl: string | undefined, sqs: SQSClient = defaultClient): Promise<void> {
+export async function deleteQueue(
+  queueUrl: string | undefined,
+  sqs: SQSClient = defaultClient,
+): Promise<void> {
   if (!queueUrl) return;
   try {
     await sqs.send(new DeleteQueueCommand({ QueueUrl: queueUrl }));

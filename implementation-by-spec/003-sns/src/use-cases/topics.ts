@@ -22,7 +22,14 @@ export interface CreateTopicInput {
 
 export interface SubscribeInput {
   topicArn: string;
-  protocol: "sqs" | "lambda" | "http" | "https" | "email" | "sms" | "application";
+  protocol:
+    | "sqs"
+    | "lambda"
+    | "http"
+    | "https"
+    | "email"
+    | "sms"
+    | "application";
   endpoint: string;
   filterPolicy?: Record<string, unknown>;
   rawMessageDelivery?: boolean;
@@ -44,8 +51,45 @@ export interface TopicEventEnvelope<TPayload> {
   createdAt: string;
 }
 
+export interface TopicAuditEvent {
+  eventId: string;
+  timestamp: string;
+  topicArn: string;
+  messageId?: string;
+  action: string;
+  outcome: "PUBLISHED" | "FILTERED" | "DELIVERED" | "FAILED";
+  eventType?: string;
+  traceId?: string;
+  tenantId?: string;
+  reason?: string;
+}
+
+export interface SubscriptionSummary {
+  total: number;
+  byProtocol: Record<string, number>;
+  endpoints: string[];
+}
+
+export interface SnsPublishCostEstimateInput {
+  publishes: number;
+  freeTierPublishes?: number;
+  usdPerMillionPublishes?: number;
+}
+
+export interface SnsPublishCostEstimate {
+  billablePublishes: number;
+  publishUsd: number;
+}
+
+export interface RetryOptions {
+  attempts?: number;
+  baseDelayMs?: number;
+  shouldRetry?: (error: unknown) => boolean;
+}
+
 function awsErrorName(error: unknown): string {
-  if (error instanceof SNSError && error.cause instanceof Error) return error.cause.name;
+  if (error instanceof SNSError && error.cause instanceof Error)
+    return error.cause.name;
   return error instanceof Error ? error.name : "";
 }
 
@@ -58,10 +102,132 @@ function topicAttributes(input: CreateTopicInput): Record<string, string> {
   const attributes: Record<string, string> = {};
   if (input.fifo) {
     attributes.FifoTopic = "true";
-    attributes.ContentBasedDeduplication = String(input.contentBasedDeduplication ?? true);
+    attributes.ContentBasedDeduplication = String(
+      input.contentBasedDeduplication ?? true,
+    );
   }
   if (input.displayName) attributes.DisplayName = input.displayName;
   return attributes;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function defaultShouldRetry(error: unknown): boolean {
+  const name = awsErrorName(error);
+  return [
+    "InternalError",
+    "Throttled",
+    "Throttling",
+    "ServiceUnavailable",
+    "RequestTimeout",
+  ].includes(name);
+}
+
+/**
+ * Build SNS string attributes used by filter policies, tracing, and tenant-aware routing.
+ *
+ * @example
+ * const attributes = topicMessageAttributes({ eventType: "order.created", tenantId: "acme", traceId: "trace-1" });
+ */
+export function topicMessageAttributes(
+  input: Record<string, string | undefined>,
+): Record<string, MessageAttributeValue> {
+  return Object.fromEntries(
+    Object.entries(input)
+      .filter((entry): entry is [string, string] => Boolean(entry[1]))
+      .map(([key, value]) => [key, { DataType: "String", StringValue: value }]),
+  );
+}
+
+/**
+ * Parse and validate a JSON event envelope published by publishJsonEvent.
+ *
+ * @example
+ * const event = parseTopicEventEnvelope<{ orderId: string }>(message);
+ */
+export function parseTopicEventEnvelope<TPayload>(
+  message: string,
+): TopicEventEnvelope<TPayload> {
+  const value = JSON.parse(message) as Partial<TopicEventEnvelope<TPayload>>;
+  if (!value.type || !value.createdAt || value.payload === undefined) {
+    throw new SNSError("VALIDATION", "message is not a TopicEventEnvelope");
+  }
+  return value as TopicEventEnvelope<TPayload>;
+}
+
+/**
+ * Build stable FIFO group/dedup IDs for tenant-scoped domain events.
+ *
+ * @example
+ * fifoEventIds("acme", "order", "order.created", "o1");
+ */
+export function fifoEventIds(
+  tenantId: string,
+  aggregateType: string,
+  eventType: string,
+  aggregateId: string,
+): { groupId: string; deduplicationId: string } {
+  const clean = (value: string) =>
+    value.trim().replace(/[^a-zA-Z0-9._:-]+/g, "-");
+  return {
+    groupId: `${clean(tenantId)}:${clean(aggregateType)}:${clean(aggregateId)}`,
+    deduplicationId: `${clean(eventType)}:${clean(aggregateId)}`,
+  };
+}
+
+/**
+ * Build structured audit event for publish/delivery logs.
+ *
+ * @example
+ * createTopicAuditEvent({ topicArn, action: "OrderPublished", outcome: "PUBLISHED" });
+ */
+export function createTopicAuditEvent(
+  input: Omit<TopicAuditEvent, "eventId" | "timestamp">,
+): TopicAuditEvent {
+  return {
+    eventId: `sns-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    timestamp: new Date().toISOString(),
+    ...input,
+  };
+}
+
+/**
+ * Summarize subscriptions for monitoring, runbooks, and tests.
+ *
+ * @example
+ * const summary = summarizeSubscriptions(await listSubscriptions(topicArn));
+ */
+export function summarizeSubscriptions(
+  subscriptions: Subscription[],
+): SubscriptionSummary {
+  const byProtocol: Record<string, number> = {};
+  const endpoints: string[] = [];
+  for (const subscription of subscriptions) {
+    const protocol = subscription.Protocol ?? "unknown";
+    byProtocol[protocol] = (byProtocol[protocol] ?? 0) + 1;
+    if (subscription.Endpoint) endpoints.push(subscription.Endpoint);
+  }
+  return { total: subscriptions.length, byProtocol, endpoints };
+}
+
+/**
+ * Estimate SNS publish request cost. Defaults are illustrative; verify live AWS Pricing before production use.
+ *
+ * @example
+ * estimateSnsPublishCost({ publishes: 20_000_000 });
+ */
+export function estimateSnsPublishCost(
+  input: SnsPublishCostEstimateInput,
+): SnsPublishCostEstimate {
+  const billablePublishes = Math.max(
+    0,
+    input.publishes - (input.freeTierPublishes ?? 1_000_000),
+  );
+  const publishUsd =
+    (billablePublishes / 1_000_000) * (input.usdPerMillionPublishes ?? 0.5);
+  return { billablePublishes, publishUsd };
 }
 
 /**
@@ -70,10 +236,16 @@ function topicAttributes(input: CreateTopicInput): Record<string, string> {
  * @example
  * const topicArn = await createTopic({ name: "orders" });
  */
-export async function createTopic(input: CreateTopicInput, sns: SNSClient = defaultClient): Promise<string> {
+export async function createTopic(
+  input: CreateTopicInput,
+  sns: SNSClient = defaultClient,
+): Promise<string> {
   try {
     const result = await sns.send(
-      new CreateTopicCommand({ Name: input.name, Attributes: topicAttributes(input) })
+      new CreateTopicCommand({
+        Name: input.name,
+        Attributes: topicAttributes(input),
+      }),
     );
     if (!result.TopicArn) throw new Error("CreateTopic returned no TopicArn");
     return result.TopicArn;
@@ -88,7 +260,10 @@ export async function createTopic(input: CreateTopicInput, sns: SNSClient = defa
  * @example
  * await deleteTopic(topicArn);
  */
-export async function deleteTopic(topicArn: string | undefined, sns: SNSClient = defaultClient): Promise<void> {
+export async function deleteTopic(
+  topicArn: string | undefined,
+  sns: SNSClient = defaultClient,
+): Promise<void> {
   if (!topicArn) return;
   try {
     await sns.send(new DeleteTopicCommand({ TopicArn: topicArn }));
@@ -104,10 +279,14 @@ export async function deleteTopic(topicArn: string | undefined, sns: SNSClient =
  * @example
  * await subscribe({ topicArn, protocol: "sqs", endpoint: queueArn, filterPolicy: { eventType: ["order.created"] } });
  */
-export async function subscribe(input: SubscribeInput, sns: SNSClient = defaultClient): Promise<string> {
+export async function subscribe(
+  input: SubscribeInput,
+  sns: SNSClient = defaultClient,
+): Promise<string> {
   try {
     const attributes: Record<string, string> = {};
-    if (input.filterPolicy) attributes.FilterPolicy = JSON.stringify(input.filterPolicy);
+    if (input.filterPolicy)
+      attributes.FilterPolicy = JSON.stringify(input.filterPolicy);
     if (input.rawMessageDelivery !== undefined) {
       attributes.RawMessageDelivery = String(input.rawMessageDelivery);
     }
@@ -119,9 +298,10 @@ export async function subscribe(input: SubscribeInput, sns: SNSClient = defaultC
         Endpoint: input.endpoint,
         ReturnSubscriptionArn: true,
         Attributes: attributes,
-      })
+      }),
     );
-    if (!result.SubscriptionArn) throw new Error("Subscribe returned no SubscriptionArn");
+    if (!result.SubscriptionArn)
+      throw new Error("Subscribe returned no SubscriptionArn");
     return result.SubscriptionArn;
   } catch (error) {
     wrapError("subscribe", error);
@@ -138,7 +318,7 @@ export async function subscribeSqsWithFilter(
   topicArn: string,
   queueArn: string,
   filterPolicy: Record<string, unknown>,
-  sns: SNSClient = defaultClient
+  sns: SNSClient = defaultClient,
 ): Promise<string> {
   return subscribe(
     {
@@ -148,7 +328,7 @@ export async function subscribeSqsWithFilter(
       filterPolicy,
       rawMessageDelivery: true,
     },
-    sns
+    sns,
   );
 }
 
@@ -161,7 +341,7 @@ export async function subscribeSqsWithFilter(
 export async function setSubscriptionFilterPolicy(
   subscriptionArn: string,
   filterPolicy: Record<string, unknown>,
-  sns: SNSClient = defaultClient
+  sns: SNSClient = defaultClient,
 ): Promise<void> {
   try {
     await sns.send(
@@ -169,7 +349,7 @@ export async function setSubscriptionFilterPolicy(
         SubscriptionArn: subscriptionArn,
         AttributeName: "FilterPolicy",
         AttributeValue: JSON.stringify(filterPolicy),
-      })
+      }),
     );
   } catch (error) {
     wrapError("setSubscriptionFilterPolicy", error);
@@ -182,10 +362,15 @@ export async function setSubscriptionFilterPolicy(
  * @example
  * await unsubscribe(subscriptionArn);
  */
-export async function unsubscribe(subscriptionArn: string | undefined, sns: SNSClient = defaultClient): Promise<void> {
+export async function unsubscribe(
+  subscriptionArn: string | undefined,
+  sns: SNSClient = defaultClient,
+): Promise<void> {
   if (!subscriptionArn) return;
   try {
-    await sns.send(new UnsubscribeCommand({ SubscriptionArn: subscriptionArn }));
+    await sns.send(
+      new UnsubscribeCommand({ SubscriptionArn: subscriptionArn }),
+    );
   } catch (error) {
     if (awsErrorName(error) === "NotFound") return;
     wrapError("unsubscribe", error);
@@ -198,7 +383,10 @@ export async function unsubscribe(subscriptionArn: string | undefined, sns: SNSC
  * @example
  * await publishMessage({ topicArn, message: "hello", attributes: { eventType: { DataType: "String", StringValue: "demo" } } });
  */
-export async function publishMessage(input: PublishMessageInput, sns: SNSClient = defaultClient): Promise<string> {
+export async function publishMessage(
+  input: PublishMessageInput,
+  sns: SNSClient = defaultClient,
+): Promise<string> {
   try {
     const result = await sns.send(
       new PublishCommand({
@@ -208,13 +396,42 @@ export async function publishMessage(input: PublishMessageInput, sns: SNSClient 
         MessageAttributes: input.attributes,
         MessageGroupId: input.groupId,
         MessageDeduplicationId: input.deduplicationId,
-      })
+      }),
     );
     if (!result.MessageId) throw new Error("Publish returned no MessageId");
     return result.MessageId;
   } catch (error) {
     wrapError("publishMessage", error);
   }
+}
+
+/**
+ * Publish with bounded exponential backoff for transient SNS failures.
+ *
+ * @example
+ * await publishMessageWithRetry({ topicArn, message: "event" }, { attempts: 4 });
+ */
+export async function publishMessageWithRetry(
+  input: PublishMessageInput,
+  options: RetryOptions = {},
+  sns: SNSClient = defaultClient,
+): Promise<string> {
+  const attempts = options.attempts ?? 3;
+  const baseDelayMs = options.baseDelayMs ?? 100;
+  const shouldRetry = options.shouldRetry ?? defaultShouldRetry;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await publishMessage(input, sns);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts || !shouldRetry(error)) throw error;
+      await sleep(baseDelayMs * 2 ** (attempt - 1));
+    }
+  }
+
+  throw lastError;
 }
 
 /**
@@ -228,7 +445,7 @@ export async function publishJsonEvent<TPayload>(
   type: string,
   payload: TPayload,
   traceId?: string,
-  sns: SNSClient = defaultClient
+  sns: SNSClient = defaultClient,
 ): Promise<string> {
   const envelope: TopicEventEnvelope<TPayload> = {
     type,
@@ -241,12 +458,9 @@ export async function publishJsonEvent<TPayload>(
     {
       topicArn,
       message: JSON.stringify(envelope),
-      attributes: {
-        eventType: { DataType: "String", StringValue: type },
-        ...(traceId && { traceId: { DataType: "String", StringValue: traceId } }),
-      },
+      attributes: topicMessageAttributes({ eventType: type, traceId }),
     },
-    sns
+    sns,
   );
 }
 
@@ -262,7 +476,7 @@ export async function publishFifoJsonEvent<TPayload>(
   deduplicationId: string,
   type: string,
   payload: TPayload,
-  sns: SNSClient = defaultClient
+  sns: SNSClient = defaultClient,
 ): Promise<string> {
   const envelope: TopicEventEnvelope<TPayload> = {
     type,
@@ -274,11 +488,11 @@ export async function publishFifoJsonEvent<TPayload>(
     {
       topicArn,
       message: JSON.stringify(envelope),
-      attributes: { eventType: { DataType: "String", StringValue: type } },
+      attributes: topicMessageAttributes({ eventType: type }),
       groupId,
       deduplicationId,
     },
-    sns
+    sns,
   );
 }
 
@@ -288,14 +502,20 @@ export async function publishFifoJsonEvent<TPayload>(
  * @example
  * const subscriptions = await listSubscriptions(topicArn);
  */
-export async function listSubscriptions(topicArn: string, sns: SNSClient = defaultClient): Promise<Subscription[]> {
+export async function listSubscriptions(
+  topicArn: string,
+  sns: SNSClient = defaultClient,
+): Promise<Subscription[]> {
   try {
     const subscriptions: Subscription[] = [];
     let nextToken: string | undefined;
 
     do {
       const result = await sns.send(
-        new ListSubscriptionsByTopicCommand({ TopicArn: topicArn, NextToken: nextToken })
+        new ListSubscriptionsByTopicCommand({
+          TopicArn: topicArn,
+          NextToken: nextToken,
+        }),
       );
       subscriptions.push(...(result.Subscriptions ?? []));
       nextToken = result.NextToken;

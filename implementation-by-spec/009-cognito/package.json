@@ -8,7 +8,14 @@
     "test:watch": "vitest",
     "setup": "tsx scripts/setup.ts",
     "seed": "tsx scripts/seed.ts",
-    "cleanup": "tsx scripts/cleanup.ts"
+    "cleanup": "tsx scripts/cleanup.ts",
+    "example:basic": "tsx src/examples/basic-user-pool.ts",
+    "example:bundle": "tsx src/examples/user-pool-bundle.ts",
+    "example:jwt": "tsx src/examples/decode-jwt.ts",
+    "example:saas": "tsx src/examples/enterprise-saas-onboarding.ts",
+    "example:authorizer": "tsx src/examples/api-authorizer-claims.ts",
+    "example:compliance": "tsx src/examples/compliance-user-lifecycle.ts",
+    "example:observability": "tsx src/examples/observability-security-runbook.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.700.0",

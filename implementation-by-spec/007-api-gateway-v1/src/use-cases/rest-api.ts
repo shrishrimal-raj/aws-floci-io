@@ -26,6 +26,23 @@ export interface MockRestApiResult {
   invokeUrl: string;
 }
 
+export interface EnterpriseMockRouteInput extends RestRouteInput {
+  description?: string;
+}
+
+export interface EnterpriseMockRouteResult {
+  pathPart: string;
+  method: string;
+  resourceId: string;
+  description?: string;
+}
+
+export interface ControlPlaneRetryOptions {
+  attempts?: number;
+  delayMs?: number;
+  shouldRetry?: (error: unknown, attempt: number) => boolean;
+}
+
 function awsErrorName(error: unknown): string {
   if (error instanceof APIGatewayv1RESTError && error.cause instanceof Error) return error.cause.name;
   return error instanceof Error ? error.name : "";
@@ -41,8 +58,42 @@ function requireValue(value: string | undefined, label: string): string {
   return value;
 }
 
+function sleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+/**
+ * Retry control-plane work such as create/deploy calls.
+ * Use for enterprise automation where throttling or temporary local emulator startup races can happen.
+ *
+ * @example
+ * const apiId = await retryControlPlane(() => createRestApi("orders-api"), { attempts: 3, delayMs: 250 });
+ */
+export async function retryControlPlane<T>(
+  operation: () => Promise<T>,
+  options: ControlPlaneRetryOptions = {}
+): Promise<T> {
+  const attempts = options.attempts ?? 3;
+  const delayMs = options.delayMs ?? 250;
+  const shouldRetry = options.shouldRetry ?? (() => true);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !shouldRetry(error, attempt)) throw error;
+      await sleep(delayMs * attempt);
+    }
+  }
+
+  throw lastError;
+}
+
 /**
  * Create a regional REST API.
+ * Enterprise use: one API per bounded context such as orders, billing, or partner-ingress.
  *
  * @example
  * const restApiId = await createRestApi("orders-api");
@@ -58,6 +109,7 @@ export async function createRestApi(name: string, api: APIGatewayClient = defaul
 
 /**
  * Find the root `/` resource ID for a REST API.
+ * Resource creation needs this ID before adding `/health`, `/orders`, or other child paths.
  *
  * @example
  * const rootId = await rootResourceId(restApiId);
@@ -75,6 +127,7 @@ export async function rootResourceId(
 
 /**
  * Create one child resource under a parent resource.
+ * Use this to model explicit REST paths such as `/health`, `/orders`, `/events`, or `/audit`.
  *
  * @example
  * const resourceId = await createResource(restApiId, rootId, "health");
@@ -95,6 +148,8 @@ export async function createResource(
 
 /**
  * Add an unauthenticated method with MOCK integration.
+ * MOCK integrations are useful for contract tests, developer portals, and early API-first delivery.
+ * Production APIs should add auth, request validation, throttling, and real Lambda/HTTP/AWS integrations.
  *
  * @example
  * await putMockMethod(restApiId, resourceId, "GET");
@@ -123,6 +178,7 @@ export async function putMockMethod(
 
 /**
  * Create a JSON schema model for request/response documentation and validation.
+ * Models help enterprise teams publish contracts before wiring production integrations.
  *
  * @example
  * const modelId = await createJsonModel(restApiId, "Message");
@@ -149,6 +205,7 @@ export async function createJsonModel(
 
 /**
  * Create deployment and expose a stage.
+ * Call after resources, methods, integrations, or models change so stage traffic sees the new API shape.
  *
  * @example
  * const deploymentId = await deployStage(restApiId, "dev");
@@ -168,6 +225,7 @@ export async function deployStage(
 
 /**
  * Create a child resource plus MOCK method in one call.
+ * Use when you need fast contract endpoints for demos, integration tests, or partner onboarding.
  *
  * @example
  * const route = await createMockRoute({ restApiId, parentId: rootId, pathPart: "health", method: "GET" });
@@ -182,7 +240,37 @@ export async function createMockRoute(
 }
 
 /**
- * Build local or AWS-style REST API invoke URL.
+ * Create several top-level MOCK routes for one REST API.
+ * Use for enterprise contract suites where health, business, audit, and event endpoints are deployed together.
+ *
+ * @example
+ * const routes = await createMockRoutes([
+ *   { restApiId, parentId: rootId, pathPart: "health", method: "GET" },
+ *   { restApiId, parentId: rootId, pathPart: "orders", method: "POST" },
+ * ]);
+ */
+export async function createMockRoutes(
+  routes: EnterpriseMockRouteInput[],
+  api: APIGatewayClient = defaultClient
+): Promise<EnterpriseMockRouteResult[]> {
+  const created: EnterpriseMockRouteResult[] = [];
+
+  for (const route of routes) {
+    const resourceId = await createMockRoute(route, api);
+    created.push({
+      pathPart: route.pathPart,
+      method: route.method ?? "GET",
+      resourceId,
+      description: route.description,
+    });
+  }
+
+  return created;
+}
+
+/**
+ * Build local Floci REST API invoke URL.
+ * The URL format matches LocalStack/Floci REST API v1 emulation for local contract tests.
  *
  * @example
  * const url = buildInvokeUrl("abc123", "dev", "/health");
@@ -199,6 +287,7 @@ export function buildInvokeUrl(
 
 /**
  * Create a deployable `/health` REST API with model and mock integration.
+ * Use as a minimal smoke-test stack for CI and developer onboarding.
  *
  * @example
  * const api = await createMockRestApi("health-api");
@@ -214,7 +303,29 @@ export async function createMockRestApi(name: string, api: APIGatewayClient = de
 }
 
 /**
+ * Create an API, pass it to a workflow, then always delete it.
+ * Use for tests, examples, sandboxes, and lifecycle-safe automation.
+ *
+ * @example
+ * await withRestApiLifecycle("orders-contract", async ({ restApiId }) => console.log(restApiId));
+ */
+export async function withRestApiLifecycle<T>(
+  name: string,
+  workflow: (api: { restApiId: string }) => Promise<T>,
+  api: APIGatewayClient = defaultClient
+): Promise<T> {
+  let restApiId: string | undefined;
+  try {
+    restApiId = await createRestApi(name, api);
+    return await workflow({ restApiId });
+  } finally {
+    await deleteRestApi(restApiId, api);
+  }
+}
+
+/**
  * Delete REST API; undefined or missing APIs are treated as cleaned up.
+ * Call from `finally` blocks so examples and CI jobs do not leak local or cloud resources.
  *
  * @example
  * await deleteRestApi(restApiId);

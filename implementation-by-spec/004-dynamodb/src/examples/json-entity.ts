@@ -1,5 +1,10 @@
 #!/usr/bin/env tsx
-import { createSingleTable, deleteTable, getJsonEntity, putJsonEntity } from "../use-cases/table.js";
+import {
+  createSingleTable,
+  deleteTable,
+  getJsonEntity,
+  putJsonEntity,
+} from "../use-cases/table.js";
 
 interface UserProfile extends Record<string, string | number | boolean> {
   name: string;
@@ -19,7 +24,7 @@ await putJsonEntity<UserProfile>(
     gsi1pk: "EMAIL#ada@example.com",
     gsi1sk: "USER#1",
   },
-  table
+  table,
 );
 
 console.log(await getJsonEntity<UserProfile>("USER#1", "PROFILE", table));

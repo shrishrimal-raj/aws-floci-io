@@ -55,8 +55,73 @@ export interface BrowserUploadSession {
   requiredHeaders: Record<string, string>;
 }
 
+export interface TenantObjectKeyInput {
+  tenantId: string;
+  userId?: string;
+  category: string;
+  fileName: string;
+}
+
+export interface SecureBrowserUploadInput extends TenantObjectKeyInput {
+  bucket: string;
+  contentType: string;
+  maxBytes: number;
+  expiresInSeconds?: number;
+  metadata?: Record<string, string>;
+}
+
+export interface SecureBrowserUploadSession extends BrowserUploadSession {
+  tenantId: string;
+  maxBytes: number;
+}
+
+export interface RetryOptions {
+  attempts?: number;
+  baseDelayMs?: number;
+  shouldRetry?: (error: unknown) => boolean;
+}
+
+export interface AuditLogEntry {
+  eventId: string;
+  timestamp: string;
+  tenantId: string;
+  actorId: string;
+  action: string;
+  bucket: string;
+  key: string;
+  outcome: "ALLOW" | "DENY" | "ERROR";
+  reason?: string;
+  requestId?: string;
+}
+
+export interface BackupManifest {
+  generatedAt: string;
+  sourceBucket: string;
+  prefix: string;
+  objectCount: number;
+  totalBytes: number;
+  objects: StoredObject[];
+}
+
+export interface StorageCostEstimateInput {
+  storageGb: number;
+  putRequests?: number;
+  getRequests?: number;
+  storageUsdPerGbMonth?: number;
+  putUsdPer1k?: number;
+  getUsdPer1k?: number;
+}
+
+export interface StorageCostEstimate {
+  storageUsd: number;
+  putRequestUsd: number;
+  getRequestUsd: number;
+  totalUsd: number;
+}
+
 function awsErrorName(error: unknown): string {
-  if (error instanceof S3Error && error.cause instanceof Error) return error.cause.name;
+  if (error instanceof S3Error && error.cause instanceof Error)
+    return error.cause.name;
   return error instanceof Error ? error.name : "";
 }
 
@@ -74,18 +139,85 @@ function toStoredObject(object: _Object): StoredObject | undefined {
   };
 }
 
+function sanitizeKeyPart(value: string): string {
+  return value
+    .trim()
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\.\./g, "")
+    .replace(/[^a-zA-Z0-9._=-]+/g, "-");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function defaultShouldRetry(error: unknown): boolean {
+  const name = awsErrorName(error);
+  return [
+    "SlowDown",
+    "RequestTimeout",
+    "Throttling",
+    "InternalError",
+    "ServiceUnavailable",
+  ].includes(name);
+}
+
+/**
+ * Build a tenant-safe S3 key prefix for multi-user SaaS objects.
+ *
+ * @example
+ * tenantObjectKey({ tenantId: "acme", userId: "u1", category: "invoices", fileName: "may.pdf" });
+ */
+export function tenantObjectKey(input: TenantObjectKeyInput): string {
+  const tenantId = sanitizeKeyPart(input.tenantId);
+  const userId = input.userId ? sanitizeKeyPart(input.userId) : undefined;
+  const category = sanitizeKeyPart(input.category);
+  const fileName = sanitizeKeyPart(input.fileName);
+  if (!tenantId || !category || !fileName)
+    throw new S3Error(
+      "VALIDATION",
+      "tenantId, category, and fileName are required",
+    );
+  return ["tenants", tenantId, userId && "users", userId, category, fileName]
+    .filter(Boolean)
+    .join("/");
+}
+
+/**
+ * Estimate simple S3 monthly storage cost for design discussions and examples.
+ * Defaults are illustrative us-east-1-style rates; verify live AWS Pricing before production use.
+ *
+ * @example
+ * estimateMonthlyStorageCost({ storageGb: 500, putRequests: 100000, getRequests: 1000000 });
+ */
+export function estimateMonthlyStorageCost(
+  input: StorageCostEstimateInput,
+): StorageCostEstimate {
+  const storageUsd = input.storageGb * (input.storageUsdPerGbMonth ?? 0.023);
+  const putRequestUsd =
+    ((input.putRequests ?? 0) / 1000) * (input.putUsdPer1k ?? 0.005);
+  const getRequestUsd =
+    ((input.getRequests ?? 0) / 1000) * (input.getUsdPer1k ?? 0.0004);
+  const totalUsd = storageUsd + putRequestUsd + getRequestUsd;
+  return { storageUsd, putRequestUsd, getRequestUsd, totalUsd };
+}
+
 /**
  * Create an idempotent S3 bucket for lab resources.
  *
  * @example
  * await createBucket("floci-s3-lab");
  */
-export async function createBucket(bucket: string, s3: S3Client = defaultClient): Promise<void> {
+export async function createBucket(
+  bucket: string,
+  s3: S3Client = defaultClient,
+): Promise<void> {
   try {
     await s3.send(new CreateBucketCommand({ Bucket: bucket }));
   } catch (error) {
     const name = awsErrorName(error);
-    if (name === "BucketAlreadyOwnedByYou" || name === "BucketAlreadyExists") return;
+    if (name === "BucketAlreadyOwnedByYou" || name === "BucketAlreadyExists")
+      return;
     wrapError("createBucket", error);
   }
 }
@@ -96,13 +228,16 @@ export async function createBucket(bucket: string, s3: S3Client = defaultClient)
  * @example
  * await enableVersioning("floci-s3-lab");
  */
-export async function enableVersioning(bucket: string, s3: S3Client = defaultClient): Promise<void> {
+export async function enableVersioning(
+  bucket: string,
+  s3: S3Client = defaultClient,
+): Promise<void> {
   try {
     await s3.send(
       new PutBucketVersioningCommand({
         Bucket: bucket,
         VersioningConfiguration: { Status: "Enabled" },
-      })
+      }),
     );
   } catch (error) {
     wrapError("enableVersioning", error);
@@ -117,10 +252,12 @@ export async function enableVersioning(bucket: string, s3: S3Client = defaultCli
  */
 export async function getVersioningStatus(
   bucket: string,
-  s3: S3Client = defaultClient
+  s3: S3Client = defaultClient,
 ): Promise<string | undefined> {
   try {
-    const result = await s3.send(new GetBucketVersioningCommand({ Bucket: bucket }));
+    const result = await s3.send(
+      new GetBucketVersioningCommand({ Bucket: bucket }),
+    );
     return result.Status;
   } catch (error) {
     wrapError("getVersioningStatus", error);
@@ -135,7 +272,7 @@ export async function getVersioningStatus(
  */
 export async function putLifecycleExpirationRule(
   input: LifecycleExpirationRuleInput,
-  s3: S3Client = defaultClient
+  s3: S3Client = defaultClient,
 ): Promise<void> {
   try {
     await s3.send(
@@ -151,7 +288,7 @@ export async function putLifecycleExpirationRule(
             },
           ],
         },
-      })
+      }),
     );
   } catch (error) {
     wrapError("putLifecycleExpirationRule", error);
@@ -166,11 +303,17 @@ export async function putLifecycleExpirationRule(
  */
 export async function getLifecycleRuleIds(
   bucket: string,
-  s3: S3Client = defaultClient
+  s3: S3Client = defaultClient,
 ): Promise<string[]> {
   try {
-    const result = await s3.send(new GetBucketLifecycleConfigurationCommand({ Bucket: bucket }));
-    return result.Rules?.map((rule) => rule.ID).filter((id): id is string => Boolean(id)) ?? [];
+    const result = await s3.send(
+      new GetBucketLifecycleConfigurationCommand({ Bucket: bucket }),
+    );
+    return (
+      result.Rules?.map((rule) => rule.ID).filter((id): id is string =>
+        Boolean(id),
+      ) ?? []
+    );
   } catch (error) {
     wrapError("getLifecycleRuleIds", error);
   }
@@ -182,7 +325,10 @@ export async function getLifecycleRuleIds(
  * @example
  * await putObject({ bucket: "floci-s3-lab", key: "docs/readme.txt", body: "hello" });
  */
-export async function putObject(input: PutObjectInput, s3: S3Client = defaultClient): Promise<string | undefined> {
+export async function putObject(
+  input: PutObjectInput,
+  s3: S3Client = defaultClient,
+): Promise<string | undefined> {
   try {
     const result = await s3.send(
       new PutObjectCommand({
@@ -191,12 +337,41 @@ export async function putObject(input: PutObjectInput, s3: S3Client = defaultCli
         Body: input.body,
         ContentType: input.contentType,
         Metadata: input.metadata,
-      })
+      }),
     );
     return result.VersionId;
   } catch (error) {
     wrapError("putObject", error);
   }
+}
+
+/**
+ * Upload with bounded exponential backoff for transient S3 failures.
+ *
+ * @example
+ * await putObjectWithRetry({ bucket, key, body: report }, { attempts: 4 });
+ */
+export async function putObjectWithRetry(
+  input: PutObjectInput,
+  options: RetryOptions = {},
+  s3: S3Client = defaultClient,
+): Promise<string | undefined> {
+  const attempts = options.attempts ?? 3;
+  const baseDelayMs = options.baseDelayMs ?? 100;
+  const shouldRetry = options.shouldRetry ?? defaultShouldRetry;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await putObject(input, s3);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts || !shouldRetry(error)) throw error;
+      await sleep(baseDelayMs * 2 ** (attempt - 1));
+    }
+  }
+
+  throw lastError;
 }
 
 /**
@@ -207,7 +382,7 @@ export async function putObject(input: PutObjectInput, s3: S3Client = defaultCli
  */
 export async function putJsonObject<TValue>(
   input: PutJsonObjectInput<TValue>,
-  s3: S3Client = defaultClient
+  s3: S3Client = defaultClient,
 ): Promise<string | undefined> {
   return putObject(
     {
@@ -217,7 +392,7 @@ export async function putJsonObject<TValue>(
       contentType: "application/json",
       metadata: input.metadata,
     },
-    s3
+    s3,
   );
 }
 
@@ -230,10 +405,12 @@ export async function putJsonObject<TValue>(
 export async function getObjectAsString(
   bucket: string,
   key: string,
-  s3: S3Client = defaultClient
+  s3: S3Client = defaultClient,
 ): Promise<string> {
   try {
-    const result = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const result = await s3.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+    );
     if (!result.Body) return "";
     return await result.Body.transformToString();
   } catch (error) {
@@ -250,7 +427,7 @@ export async function getObjectAsString(
 export async function getJsonObject<TValue>(
   bucket: string,
   key: string,
-  s3: S3Client = defaultClient
+  s3: S3Client = defaultClient,
 ): Promise<TValue> {
   try {
     return JSON.parse(await getObjectAsString(bucket, key, s3)) as TValue;
@@ -269,7 +446,7 @@ export async function getJsonObject<TValue>(
 export async function listObjects(
   bucket: string,
   prefix = "",
-  s3: S3Client = defaultClient
+  s3: S3Client = defaultClient,
 ): Promise<StoredObject[]> {
   try {
     const objects: StoredObject[] = [];
@@ -281,7 +458,7 @@ export async function listObjects(
           Bucket: bucket,
           Prefix: prefix,
           ContinuationToken: continuationToken,
-        })
+        }),
       );
       for (const item of result.Contents ?? []) {
         const object = toStoredObject(item);
@@ -302,7 +479,11 @@ export async function listObjects(
  * @example
  * await deleteObject("floci-s3-lab", "docs/readme.txt");
  */
-export async function deleteObject(bucket: string, key: string, s3: S3Client = defaultClient): Promise<void> {
+export async function deleteObject(
+  bucket: string,
+  key: string,
+  s3: S3Client = defaultClient,
+): Promise<void> {
   try {
     await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
   } catch (error) {
@@ -316,15 +497,21 @@ export async function deleteObject(bucket: string, key: string, s3: S3Client = d
  * @example
  * await emptyBucket("floci-s3-lab");
  */
-export async function emptyBucket(bucket: string, s3: S3Client = defaultClient): Promise<void> {
+export async function emptyBucket(
+  bucket: string,
+  s3: S3Client = defaultClient,
+): Promise<void> {
   try {
     const unversionedObjects = await listObjects(bucket, "", s3);
     if (unversionedObjects.length > 0) {
       await s3.send(
         new DeleteObjectsCommand({
           Bucket: bucket,
-          Delete: { Objects: unversionedObjects.map((object) => ({ Key: object.key })), Quiet: true },
-        })
+          Delete: {
+            Objects: unversionedObjects.map((object) => ({ Key: object.key })),
+            Quiet: true,
+          },
+        }),
       );
     }
 
@@ -337,19 +524,29 @@ export async function emptyBucket(bucket: string, s3: S3Client = defaultClient):
           Bucket: bucket,
           KeyMarker: keyMarker,
           VersionIdMarker: versionIdMarker,
-        })
+        }),
       );
       const objects: ObjectIdentifier[] = [
         ...(result.Versions ?? []),
         ...(result.DeleteMarkers ?? []),
       ].flatMap((object) =>
         object.Key
-          ? [{ Key: object.Key, ...(object.VersionId && { VersionId: object.VersionId }) }]
-          : []
+          ? [
+              {
+                Key: object.Key,
+                ...(object.VersionId && { VersionId: object.VersionId }),
+              },
+            ]
+          : [],
       );
 
       if (objects.length > 0) {
-        await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: objects, Quiet: true } }));
+        await s3.send(
+          new DeleteObjectsCommand({
+            Bucket: bucket,
+            Delete: { Objects: objects, Quiet: true },
+          }),
+        );
       }
 
       keyMarker = result.NextKeyMarker;
@@ -366,7 +563,10 @@ export async function emptyBucket(bucket: string, s3: S3Client = defaultClient):
  * @example
  * await deleteBucket("floci-s3-lab");
  */
-export async function deleteBucket(bucket: string, s3: S3Client = defaultClient): Promise<void> {
+export async function deleteBucket(
+  bucket: string,
+  s3: S3Client = defaultClient,
+): Promise<void> {
   try {
     await emptyBucket(bucket, s3);
     await s3.send(new DeleteBucketCommand({ Bucket: bucket }));
@@ -386,14 +586,46 @@ export async function createPresignedPutUrl(
   bucket: string,
   key: string,
   expiresInSeconds = 900,
-  s3: S3Client = defaultClient
+  s3: S3Client = defaultClient,
 ): Promise<string> {
   try {
-    return await getSignedUrl(s3, new PutObjectCommand({ Bucket: bucket, Key: key }), {
-      expiresIn: expiresInSeconds,
-    });
+    return await getSignedUrl(
+      s3,
+      new PutObjectCommand({ Bucket: bucket, Key: key }),
+      {
+        expiresIn: expiresInSeconds,
+      },
+    );
   } catch (error) {
     wrapError("createPresignedPutUrl", error);
+  }
+}
+
+/**
+ * Create upload URL that signs content type and metadata for safer browser uploads.
+ *
+ * @example
+ * const url = await createPresignedPutUrlForObject({ bucket, key, body: "", contentType: "application/pdf" });
+ */
+export async function createPresignedPutUrlForObject(
+  input: Omit<PutObjectInput, "body"> & { body?: PutObjectInput["body"] },
+  expiresInSeconds = 900,
+  s3: S3Client = defaultClient,
+): Promise<string> {
+  try {
+    return await getSignedUrl(
+      s3,
+      new PutObjectCommand({
+        Bucket: input.bucket,
+        Key: input.key,
+        Body: input.body,
+        ContentType: input.contentType,
+        Metadata: input.metadata,
+      }),
+      { expiresIn: expiresInSeconds },
+    );
+  } catch (error) {
+    wrapError("createPresignedPutUrlForObject", error);
   }
 }
 
@@ -407,12 +639,16 @@ export async function createPresignedGetUrl(
   bucket: string,
   key: string,
   expiresInSeconds = 900,
-  s3: S3Client = defaultClient
+  s3: S3Client = defaultClient,
 ): Promise<string> {
   try {
-    return await getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket, Key: key }), {
-      expiresIn: expiresInSeconds,
-    });
+    return await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+      {
+        expiresIn: expiresInSeconds,
+      },
+    );
   } catch (error) {
     wrapError("createPresignedGetUrl", error);
   }
@@ -428,7 +664,7 @@ export async function createBrowserUploadSession(
   bucket: string,
   key: string,
   expiresInSeconds = 900,
-  s3: S3Client = defaultClient
+  s3: S3Client = defaultClient,
 ): Promise<BrowserUploadSession> {
   const [putUrl, getUrl] = await Promise.all([
     createPresignedPutUrl(bucket, key, expiresInSeconds, s3),
@@ -442,4 +678,97 @@ export async function createBrowserUploadSession(
     expiresInSeconds,
     requiredHeaders: { "content-type": "application/octet-stream" },
   };
+}
+
+/**
+ * Create an enterprise browser upload session scoped to tenant/user/category.
+ * Signs content type and metadata; caller should also enforce maxBytes in API/browser validation.
+ *
+ * @example
+ * await createSecureBrowserUploadSession({ bucket, tenantId: "acme", userId: "u1", category: "contracts", fileName: "msa.pdf", contentType: "application/pdf", maxBytes: 10_000_000 });
+ */
+export async function createSecureBrowserUploadSession(
+  input: SecureBrowserUploadInput,
+  s3: S3Client = defaultClient,
+): Promise<SecureBrowserUploadSession> {
+  if (input.maxBytes <= 0)
+    throw new S3Error("VALIDATION", "maxBytes must be greater than zero");
+  const key = tenantObjectKey(input);
+  const expiresInSeconds = input.expiresInSeconds ?? 300;
+  const metadata = {
+    tenantId: input.tenantId,
+    ...(input.userId && { userId: input.userId }),
+    maxBytes: String(input.maxBytes),
+    ...input.metadata,
+  };
+
+  const [putUrl, getUrl] = await Promise.all([
+    createPresignedPutUrlForObject(
+      { bucket: input.bucket, key, contentType: input.contentType, metadata },
+      expiresInSeconds,
+      s3,
+    ),
+    createPresignedGetUrl(input.bucket, key, expiresInSeconds, s3),
+  ]);
+
+  return {
+    key,
+    putUrl,
+    getUrl,
+    expiresInSeconds,
+    requiredHeaders: { "content-type": input.contentType },
+    tenantId: input.tenantId,
+    maxBytes: input.maxBytes,
+  };
+}
+
+/**
+ * Write immutable-style JSON audit entry under an audit prefix.
+ *
+ * @example
+ * await writeAuditLogEntry("audit-bucket", { eventId: "evt1", timestamp: new Date().toISOString(), tenantId: "acme", actorId: "u1", action: "ObjectDownloaded", bucket, key, outcome: "ALLOW" });
+ */
+export async function writeAuditLogEntry(
+  auditBucket: string,
+  entry: AuditLogEntry,
+  s3: S3Client = defaultClient,
+): Promise<string | undefined> {
+  const day = entry.timestamp.slice(0, 10);
+  const key = `audit/tenant=${sanitizeKeyPart(entry.tenantId)}/date=${day}/${sanitizeKeyPart(entry.eventId)}.json`;
+  return putJsonObject(
+    {
+      bucket: auditBucket,
+      key,
+      value: entry,
+      metadata: { tenantId: entry.tenantId },
+    },
+    s3,
+  );
+}
+
+/**
+ * Build and store a backup manifest for one prefix. Use with versioning/replication in production.
+ *
+ * @example
+ * const manifest = await writeBackupManifest(bucket, "tenants/acme/");
+ */
+export async function writeBackupManifest(
+  bucket: string,
+  prefix: string,
+  s3: S3Client = defaultClient,
+): Promise<BackupManifest> {
+  const objects = await listObjects(bucket, prefix, s3);
+  const manifest: BackupManifest = {
+    generatedAt: new Date().toISOString(),
+    sourceBucket: bucket,
+    prefix,
+    objectCount: objects.length,
+    totalBytes: objects.reduce((sum, object) => sum + object.size, 0),
+    objects,
+  };
+  await putJsonObject(
+    { bucket, key: `backup-manifests/${Date.now()}.json`, value: manifest },
+    s3,
+  );
+  return manifest;
 }

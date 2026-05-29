@@ -1,5 +1,9 @@
 #!/usr/bin/env tsx
-import { createBrowserUploadSession, createBucket, deleteBucket } from "../use-cases/object-storage.js";
+import {
+  createBrowserUploadSession,
+  createBucket,
+  deleteBucket,
+} from "../use-cases/object-storage.js";
 
 const bucket = `floci-s3-browser-${Date.now()}`;
 const key = "uploads/avatar.png";

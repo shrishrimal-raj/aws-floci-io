@@ -1,5 +1,10 @@
 #!/usr/bin/env tsx
-import { createBucket, deleteBucket, getJsonObject, putJsonObject } from "../use-cases/object-storage.js";
+import {
+  createBucket,
+  deleteBucket,
+  getJsonObject,
+  putJsonObject,
+} from "../use-cases/object-storage.js";
 
 interface UserProfile {
   id: string;

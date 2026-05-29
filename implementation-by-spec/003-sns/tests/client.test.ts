@@ -1,14 +1,18 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { CreateQueueCommand, DeleteQueueCommand, GetQueueAttributesCommand, SQSClient } from "@aws-sdk/client-sqs";
+import type { SNSClient } from "@aws-sdk/client-sns";
 import { awsDefaults } from "@floci-lab/aws-clients";
 import { client } from "../src/client.js";
+import type { SNSError } from "../src/errors.js";
 import {
   createTopic,
   deleteTopic,
   listSubscriptions,
+  publishFifoJsonEvent,
+  publishJsonEvent,
   publishMessage,
   setSubscriptionFilterPolicy,
-  subscribe,
+  subscribeSqsWithFilter,
   unsubscribe,
 } from "../src/use-cases/topics.js";
 import { waitForFloci } from "@floci-lab/test-utils";
@@ -20,6 +24,16 @@ let fifoTopicArn: string;
 let subscriptionArn: string | undefined;
 let queueUrl: string | undefined;
 let queueArn: string;
+
+function failingClient(name: string): SNSClient {
+  return {
+    send: vi.fn(async () => {
+      const error = new Error(`${name} failed`);
+      error.name = name;
+      throw error;
+    }),
+  } as unknown as SNSClient;
+}
 
 describe("SNS", () => {
   beforeAll(async () => {
@@ -47,13 +61,7 @@ describe("SNS", () => {
   });
 
   it("subscribes SQS endpoints with filter policies", async () => {
-    subscriptionArn = await subscribe({
-      topicArn,
-      protocol: "sqs",
-      endpoint: queueArn,
-      filterPolicy: { eventType: ["user.created"] },
-      rawMessageDelivery: true,
-    });
+    subscriptionArn = await subscribeSqsWithFilter(topicArn, queueArn, { eventType: ["user.created"] });
 
     expect(subscriptionArn).toContain(":");
 
@@ -63,7 +71,7 @@ describe("SNS", () => {
     expect(subscriptions.some((subscription) => subscription.SubscriptionArn === subscriptionArn)).toBe(true);
   });
 
-  it("publishes standard and FIFO messages", async () => {
+  it("publishes raw, JSON, and FIFO messages", async () => {
     await expect(
       publishMessage({
         topicArn,
@@ -73,12 +81,24 @@ describe("SNS", () => {
       })
     ).resolves.toBeTruthy();
 
+    await expect(publishJsonEvent(topicArn, "user.updated", { id: "u2" }, "trace-1")).resolves.toBeTruthy();
+
     await expect(
-      publishMessage({
-        topicArn: fifoTopicArn,
-        message: JSON.stringify({ id: "u2" }),
-        groupId: "users",
-      })
+      publishFifoJsonEvent(fifoTopicArn, "users", `dedupe-${Date.now()}`, "user.created", { id: "u3" })
     ).resolves.toBeTruthy();
+  });
+
+  it("wraps SDK create failures in SNSError", async () => {
+    await expect(createTopic({ name: "x" }, failingClient("AuthorizationError"))).rejects.toMatchObject({
+      code: "SNS_AuthorizationError",
+      message: "SNS createTopic failed",
+    } satisfies Partial<SNSError>);
+  });
+
+  it("wraps SDK publish failures in SNSError", async () => {
+    await expect(publishMessage({ topicArn, message: "x" }, failingClient("InvalidParameter"))).rejects.toMatchObject({
+      code: "SNS_InvalidParameter",
+      message: "SNS publishMessage failed",
+    } satisfies Partial<SNSError>);
   });
 });

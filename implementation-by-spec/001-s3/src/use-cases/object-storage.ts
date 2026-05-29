@@ -40,6 +40,21 @@ export interface LifecycleExpirationRuleInput {
   days: number;
 }
 
+export interface PutJsonObjectInput<TValue> {
+  bucket: string;
+  key: string;
+  value: TValue;
+  metadata?: Record<string, string>;
+}
+
+export interface BrowserUploadSession {
+  key: string;
+  putUrl: string;
+  getUrl: string;
+  expiresInSeconds: number;
+  requiredHeaders: Record<string, string>;
+}
+
 function awsErrorName(error: unknown): string {
   if (error instanceof S3Error && error.cause instanceof Error) return error.cause.name;
   return error instanceof Error ? error.name : "";
@@ -59,6 +74,12 @@ function toStoredObject(object: _Object): StoredObject | undefined {
   };
 }
 
+/**
+ * Create an idempotent S3 bucket for lab resources.
+ *
+ * @example
+ * await createBucket("floci-s3-lab");
+ */
 export async function createBucket(bucket: string, s3: S3Client = defaultClient): Promise<void> {
   try {
     await s3.send(new CreateBucketCommand({ Bucket: bucket }));
@@ -69,6 +90,12 @@ export async function createBucket(bucket: string, s3: S3Client = defaultClient)
   }
 }
 
+/**
+ * Enable object versioning for safer overwrites and deletes.
+ *
+ * @example
+ * await enableVersioning("floci-s3-lab");
+ */
 export async function enableVersioning(bucket: string, s3: S3Client = defaultClient): Promise<void> {
   try {
     await s3.send(
@@ -82,6 +109,12 @@ export async function enableVersioning(bucket: string, s3: S3Client = defaultCli
   }
 }
 
+/**
+ * Read current bucket versioning status.
+ *
+ * @example
+ * const status = await getVersioningStatus("floci-s3-lab");
+ */
 export async function getVersioningStatus(
   bucket: string,
   s3: S3Client = defaultClient
@@ -94,6 +127,12 @@ export async function getVersioningStatus(
   }
 }
 
+/**
+ * Store a lifecycle expiration rule for a prefix.
+ *
+ * @example
+ * await putLifecycleExpirationRule({ bucket: "floci-s3-lab", id: "expire-tmp", prefix: "tmp/", days: 7 });
+ */
 export async function putLifecycleExpirationRule(
   input: LifecycleExpirationRuleInput,
   s3: S3Client = defaultClient
@@ -119,6 +158,12 @@ export async function putLifecycleExpirationRule(
   }
 }
 
+/**
+ * List lifecycle rule IDs configured on a bucket.
+ *
+ * @example
+ * const ids = await getLifecycleRuleIds("floci-s3-lab");
+ */
 export async function getLifecycleRuleIds(
   bucket: string,
   s3: S3Client = defaultClient
@@ -131,6 +176,12 @@ export async function getLifecycleRuleIds(
   }
 }
 
+/**
+ * Upload raw bytes or text to S3.
+ *
+ * @example
+ * await putObject({ bucket: "floci-s3-lab", key: "docs/readme.txt", body: "hello" });
+ */
 export async function putObject(input: PutObjectInput, s3: S3Client = defaultClient): Promise<string | undefined> {
   try {
     const result = await s3.send(
@@ -148,6 +199,34 @@ export async function putObject(input: PutObjectInput, s3: S3Client = defaultCli
   }
 }
 
+/**
+ * Store JSON with correct content type and stable serialization.
+ *
+ * @example
+ * await putJsonObject({ bucket: "floci-s3-lab", key: "users/1.json", value: { id: "1" } });
+ */
+export async function putJsonObject<TValue>(
+  input: PutJsonObjectInput<TValue>,
+  s3: S3Client = defaultClient
+): Promise<string | undefined> {
+  return putObject(
+    {
+      bucket: input.bucket,
+      key: input.key,
+      body: JSON.stringify(input.value),
+      contentType: "application/json",
+      metadata: input.metadata,
+    },
+    s3
+  );
+}
+
+/**
+ * Download an object body as UTF-8 text.
+ *
+ * @example
+ * const text = await getObjectAsString("floci-s3-lab", "docs/readme.txt");
+ */
 export async function getObjectAsString(
   bucket: string,
   key: string,
@@ -162,6 +241,31 @@ export async function getObjectAsString(
   }
 }
 
+/**
+ * Download and parse a JSON object.
+ *
+ * @example
+ * const profile = await getJsonObject<{ id: string }>("floci-s3-lab", "users/1.json");
+ */
+export async function getJsonObject<TValue>(
+  bucket: string,
+  key: string,
+  s3: S3Client = defaultClient
+): Promise<TValue> {
+  try {
+    return JSON.parse(await getObjectAsString(bucket, key, s3)) as TValue;
+  } catch (error) {
+    if (error instanceof S3Error) throw error;
+    wrapError("getJsonObject", error);
+  }
+}
+
+/**
+ * List objects under a prefix with pagination.
+ *
+ * @example
+ * const objects = await listObjects("floci-s3-lab", "users/");
+ */
 export async function listObjects(
   bucket: string,
   prefix = "",
@@ -192,6 +296,12 @@ export async function listObjects(
   }
 }
 
+/**
+ * Delete one object by key.
+ *
+ * @example
+ * await deleteObject("floci-s3-lab", "docs/readme.txt");
+ */
 export async function deleteObject(bucket: string, key: string, s3: S3Client = defaultClient): Promise<void> {
   try {
     await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
@@ -200,6 +310,12 @@ export async function deleteObject(bucket: string, key: string, s3: S3Client = d
   }
 }
 
+/**
+ * Remove every current object, object version, and delete marker from a bucket.
+ *
+ * @example
+ * await emptyBucket("floci-s3-lab");
+ */
 export async function emptyBucket(bucket: string, s3: S3Client = defaultClient): Promise<void> {
   try {
     const unversionedObjects = await listObjects(bucket, "", s3);
@@ -244,6 +360,12 @@ export async function emptyBucket(bucket: string, s3: S3Client = defaultClient):
   }
 }
 
+/**
+ * Empty then delete a bucket; missing buckets are treated as already cleaned up.
+ *
+ * @example
+ * await deleteBucket("floci-s3-lab");
+ */
 export async function deleteBucket(bucket: string, s3: S3Client = defaultClient): Promise<void> {
   try {
     await emptyBucket(bucket, s3);
@@ -254,6 +376,12 @@ export async function deleteBucket(bucket: string, s3: S3Client = defaultClient)
   }
 }
 
+/**
+ * Create a short-lived upload URL for browser or mobile clients.
+ *
+ * @example
+ * const url = await createPresignedPutUrl("floci-s3-lab", "uploads/avatar.png", 300);
+ */
 export async function createPresignedPutUrl(
   bucket: string,
   key: string,
@@ -269,6 +397,12 @@ export async function createPresignedPutUrl(
   }
 }
 
+/**
+ * Create a short-lived download URL for private objects.
+ *
+ * @example
+ * const url = await createPresignedGetUrl("floci-s3-lab", "uploads/avatar.png", 300);
+ */
 export async function createPresignedGetUrl(
   bucket: string,
   key: string,
@@ -282,4 +416,30 @@ export async function createPresignedGetUrl(
   } catch (error) {
     wrapError("createPresignedGetUrl", error);
   }
+}
+
+/**
+ * Build paired upload/download presigned URLs plus required browser headers.
+ *
+ * @example
+ * const session = await createBrowserUploadSession("floci-s3-lab", "uploads/avatar.png");
+ */
+export async function createBrowserUploadSession(
+  bucket: string,
+  key: string,
+  expiresInSeconds = 900,
+  s3: S3Client = defaultClient
+): Promise<BrowserUploadSession> {
+  const [putUrl, getUrl] = await Promise.all([
+    createPresignedPutUrl(bucket, key, expiresInSeconds, s3),
+    createPresignedGetUrl(bucket, key, expiresInSeconds, s3),
+  ]);
+
+  return {
+    key,
+    putUrl,
+    getUrl,
+    expiresInSeconds,
+    requiredHeaders: { "content-type": "application/octet-stream" },
+  };
 }

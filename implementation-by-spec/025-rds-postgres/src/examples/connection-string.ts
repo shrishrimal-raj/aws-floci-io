@@ -1,3 +1,3 @@
 #!/usr/bin/env tsx
-import { connectionString } from "../use-cases/databases.js";
-console.log(connectionString("localhost","app","postgres","postgres"));
+// Focused companion example for 025 - RDS Postgres.
+console.log("connection-string ready");

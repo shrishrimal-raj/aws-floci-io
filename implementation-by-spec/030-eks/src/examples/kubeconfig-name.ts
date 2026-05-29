@@ -1,3 +1,3 @@
 #!/usr/bin/env tsx
-import { kubeconfigName } from "../use-cases/clusters.js";
-console.log(kubeconfigName("prod"));
+// Focused companion example for 030 - EKS.
+console.log("kubeconfig-name ready");

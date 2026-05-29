@@ -37,6 +37,13 @@ export interface PublishMessageInput {
   deduplicationId?: string;
 }
 
+export interface TopicEventEnvelope<TPayload> {
+  type: string;
+  payload: TPayload;
+  traceId?: string;
+  createdAt: string;
+}
+
 function awsErrorName(error: unknown): string {
   if (error instanceof SNSError && error.cause instanceof Error) return error.cause.name;
   return error instanceof Error ? error.name : "";
@@ -57,6 +64,12 @@ function topicAttributes(input: CreateTopicInput): Record<string, string> {
   return attributes;
 }
 
+/**
+ * Create a standard or FIFO pub/sub topic.
+ *
+ * @example
+ * const topicArn = await createTopic({ name: "orders" });
+ */
 export async function createTopic(input: CreateTopicInput, sns: SNSClient = defaultClient): Promise<string> {
   try {
     const result = await sns.send(
@@ -69,6 +82,12 @@ export async function createTopic(input: CreateTopicInput, sns: SNSClient = defa
   }
 }
 
+/**
+ * Delete a topic; undefined or already-missing topics are treated as cleaned up.
+ *
+ * @example
+ * await deleteTopic(topicArn);
+ */
 export async function deleteTopic(topicArn: string | undefined, sns: SNSClient = defaultClient): Promise<void> {
   if (!topicArn) return;
   try {
@@ -79,6 +98,12 @@ export async function deleteTopic(topicArn: string | undefined, sns: SNSClient =
   }
 }
 
+/**
+ * Subscribe an endpoint and optionally set filter policy/raw delivery.
+ *
+ * @example
+ * await subscribe({ topicArn, protocol: "sqs", endpoint: queueArn, filterPolicy: { eventType: ["order.created"] } });
+ */
 export async function subscribe(input: SubscribeInput, sns: SNSClient = defaultClient): Promise<string> {
   try {
     const attributes: Record<string, string> = {};
@@ -103,6 +128,36 @@ export async function subscribe(input: SubscribeInput, sns: SNSClient = defaultC
   }
 }
 
+/**
+ * Convenience helper for SQS fanout subscriptions with filter policy.
+ *
+ * @example
+ * await subscribeSqsWithFilter(topicArn, queueArn, { eventType: ["order.created"] });
+ */
+export async function subscribeSqsWithFilter(
+  topicArn: string,
+  queueArn: string,
+  filterPolicy: Record<string, unknown>,
+  sns: SNSClient = defaultClient
+): Promise<string> {
+  return subscribe(
+    {
+      topicArn,
+      protocol: "sqs",
+      endpoint: queueArn,
+      filterPolicy,
+      rawMessageDelivery: true,
+    },
+    sns
+  );
+}
+
+/**
+ * Replace a subscription filter policy.
+ *
+ * @example
+ * await setSubscriptionFilterPolicy(subscriptionArn, { eventType: ["order.created", "order.updated"] });
+ */
 export async function setSubscriptionFilterPolicy(
   subscriptionArn: string,
   filterPolicy: Record<string, unknown>,
@@ -121,6 +176,12 @@ export async function setSubscriptionFilterPolicy(
   }
 }
 
+/**
+ * Remove a subscription; undefined or already-missing subscriptions are ignored.
+ *
+ * @example
+ * await unsubscribe(subscriptionArn);
+ */
 export async function unsubscribe(subscriptionArn: string | undefined, sns: SNSClient = defaultClient): Promise<void> {
   if (!subscriptionArn) return;
   try {
@@ -131,6 +192,12 @@ export async function unsubscribe(subscriptionArn: string | undefined, sns: SNSC
   }
 }
 
+/**
+ * Publish a raw string message with optional attributes and FIFO fields.
+ *
+ * @example
+ * await publishMessage({ topicArn, message: "hello", attributes: { eventType: { DataType: "String", StringValue: "demo" } } });
+ */
 export async function publishMessage(input: PublishMessageInput, sns: SNSClient = defaultClient): Promise<string> {
   try {
     const result = await sns.send(
@@ -150,6 +217,77 @@ export async function publishMessage(input: PublishMessageInput, sns: SNSClient 
   }
 }
 
+/**
+ * Publish typed JSON event with filterable eventType and optional traceId attributes.
+ *
+ * @example
+ * await publishJsonEvent(topicArn, "order.created", { orderId: "o1" }, "trace-1");
+ */
+export async function publishJsonEvent<TPayload>(
+  topicArn: string,
+  type: string,
+  payload: TPayload,
+  traceId?: string,
+  sns: SNSClient = defaultClient
+): Promise<string> {
+  const envelope: TopicEventEnvelope<TPayload> = {
+    type,
+    payload,
+    traceId,
+    createdAt: new Date().toISOString(),
+  };
+
+  return publishMessage(
+    {
+      topicArn,
+      message: JSON.stringify(envelope),
+      attributes: {
+        eventType: { DataType: "String", StringValue: type },
+        ...(traceId && { traceId: { DataType: "String", StringValue: traceId } }),
+      },
+    },
+    sns
+  );
+}
+
+/**
+ * Publish typed JSON event to FIFO topic with group and deduplication IDs.
+ *
+ * @example
+ * await publishFifoJsonEvent(fifoTopicArn, "customer-1", "event-1", "order.created", { orderId: "o1" });
+ */
+export async function publishFifoJsonEvent<TPayload>(
+  topicArn: string,
+  groupId: string,
+  deduplicationId: string,
+  type: string,
+  payload: TPayload,
+  sns: SNSClient = defaultClient
+): Promise<string> {
+  const envelope: TopicEventEnvelope<TPayload> = {
+    type,
+    payload,
+    createdAt: new Date().toISOString(),
+  };
+
+  return publishMessage(
+    {
+      topicArn,
+      message: JSON.stringify(envelope),
+      attributes: { eventType: { DataType: "String", StringValue: type } },
+      groupId,
+      deduplicationId,
+    },
+    sns
+  );
+}
+
+/**
+ * List all subscriptions attached to a topic with pagination.
+ *
+ * @example
+ * const subscriptions = await listSubscriptions(topicArn);
+ */
 export async function listSubscriptions(topicArn: string, sns: SNSClient = defaultClient): Promise<Subscription[]> {
   try {
     const subscriptions: Subscription[] = [];

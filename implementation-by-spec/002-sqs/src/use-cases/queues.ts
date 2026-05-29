@@ -49,6 +49,19 @@ export interface ReceivedQueueMessage {
   attributes: Record<string, string>;
 }
 
+export interface QueueMessageEnvelope<TPayload> {
+  type: string;
+  payload: TPayload;
+  traceId?: string;
+  createdAt: string;
+}
+
+export interface ProcessOneMessageResult {
+  processed: boolean;
+  deleted: boolean;
+  messageId?: string;
+}
+
 function awsErrorName(error: unknown): string {
   if (error instanceof SQSError && error.cause instanceof Error) return error.cause.name;
   return error instanceof Error ? error.name : "";
@@ -92,6 +105,12 @@ function toReceived(message: Message): ReceivedQueueMessage {
   };
 }
 
+/**
+ * Create a standard or FIFO queue with production attributes.
+ *
+ * @example
+ * const queueUrl = await createQueue({ name: "orders", receiveWaitTimeSeconds: 10 });
+ */
 export async function createQueue(input: CreateQueueInput, sqs: SQSClient = defaultClient): Promise<string> {
   try {
     const result = await sqs.send(
@@ -104,6 +123,12 @@ export async function createQueue(input: CreateQueueInput, sqs: SQSClient = defa
   }
 }
 
+/**
+ * Resolve a queue URL by name; returns undefined when missing.
+ *
+ * @example
+ * const queueUrl = await getQueueUrl("orders");
+ */
 export async function getQueueUrl(name: string, sqs: SQSClient = defaultClient): Promise<string | undefined> {
   try {
     const result = await sqs.send(new GetQueueUrlCommand({ QueueName: name }));
@@ -114,6 +139,12 @@ export async function getQueueUrl(name: string, sqs: SQSClient = defaultClient):
   }
 }
 
+/**
+ * Read a queue ARN for IAM policies and DLQ redrive policies.
+ *
+ * @example
+ * const arn = await getQueueArn(queueUrl);
+ */
 export async function getQueueArn(queueUrl: string, sqs: SQSClient = defaultClient): Promise<string> {
   try {
     const result = await sqs.send(
@@ -127,6 +158,12 @@ export async function getQueueArn(queueUrl: string, sqs: SQSClient = defaultClie
   }
 }
 
+/**
+ * Create a main queue plus dead-letter queue and wire redrive policy.
+ *
+ * @example
+ * const pair = await createQueueWithDlq("orders", 3);
+ */
 export async function createQueueWithDlq(
   name: string,
   maxReceiveCount = 3,
@@ -141,6 +178,12 @@ export async function createQueueWithDlq(
   return { queueUrl, deadLetterQueueUrl, deadLetterQueueArn };
 }
 
+/**
+ * Send one message, including FIFO group/deduplication fields when needed.
+ *
+ * @example
+ * await sendMessage({ queueUrl, body: JSON.stringify({ orderId: "o1" }) });
+ */
 export async function sendMessage(input: SendQueueMessageInput, sqs: SQSClient = defaultClient): Promise<string> {
   try {
     const result = await sqs.send(
@@ -160,6 +203,69 @@ export async function sendMessage(input: SendQueueMessageInput, sqs: SQSClient =
   }
 }
 
+/**
+ * Send typed JSON payload wrapped in a backend event envelope.
+ *
+ * @example
+ * await sendJsonMessage(queueUrl, "order.created", { orderId: "o1" }, "trace-1");
+ */
+export async function sendJsonMessage<TPayload>(
+  queueUrl: string,
+  type: string,
+  payload: TPayload,
+  traceId?: string,
+  sqs: SQSClient = defaultClient
+): Promise<string> {
+  const envelope: QueueMessageEnvelope<TPayload> = {
+    type,
+    payload,
+    traceId,
+    createdAt: new Date().toISOString(),
+  };
+
+  return sendMessage(
+    {
+      queueUrl,
+      body: JSON.stringify(envelope),
+      attributes: {
+        eventType: { DataType: "String", StringValue: type },
+        ...(traceId && { traceId: { DataType: "String", StringValue: traceId } }),
+      },
+    },
+    sqs
+  );
+}
+
+/**
+ * Send a FIFO message with stable group and deduplication IDs.
+ *
+ * @example
+ * await sendFifoMessage(fifoQueueUrl, "customer-1", "order-1", { orderId: "o1" });
+ */
+export async function sendFifoMessage<TPayload>(
+  queueUrl: string,
+  groupId: string,
+  deduplicationId: string,
+  payload: TPayload,
+  sqs: SQSClient = defaultClient
+): Promise<string> {
+  return sendMessage(
+    {
+      queueUrl,
+      body: JSON.stringify(payload),
+      groupId,
+      deduplicationId,
+    },
+    sqs
+  );
+}
+
+/**
+ * Send up to 10 messages in one batch request.
+ *
+ * @example
+ * const ids = await sendMessageBatch(queueUrl, ["one", "two"]);
+ */
 export async function sendMessageBatch(
   queueUrl: string,
   bodies: string[],
@@ -178,6 +284,12 @@ export async function sendMessageBatch(
   }
 }
 
+/**
+ * Long-poll messages and include system/message attributes.
+ *
+ * @example
+ * const messages = await receiveMessages(queueUrl, 10, 5);
+ */
 export async function receiveMessages(
   queueUrl: string,
   maxMessages = 1,
@@ -200,6 +312,12 @@ export async function receiveMessages(
   }
 }
 
+/**
+ * Delete a processed message by receipt handle.
+ *
+ * @example
+ * await deleteMessage(queueUrl, message.receiptHandle);
+ */
 export async function deleteMessage(
   queueUrl: string,
   receiptHandle: string,
@@ -212,6 +330,12 @@ export async function deleteMessage(
   }
 }
 
+/**
+ * Extend or shorten invisibility window while a worker processes a message.
+ *
+ * @example
+ * await changeMessageVisibility(queueUrl, message.receiptHandle, 60);
+ */
 export async function changeMessageVisibility(
   queueUrl: string,
   receiptHandle: string,
@@ -231,6 +355,36 @@ export async function changeMessageVisibility(
   }
 }
 
+/**
+ * Process one message and delete it only after handler succeeds.
+ *
+ * @example
+ * await processOneMessage(queueUrl, async (message) => console.log(message.body));
+ */
+export async function processOneMessage(
+  queueUrl: string,
+  handler: (message: ReceivedQueueMessage) => Promise<void>,
+  sqs: SQSClient = defaultClient
+): Promise<ProcessOneMessageResult> {
+  const [message] = await receiveMessages(queueUrl, 1, 1, sqs);
+  if (!message) return { processed: false, deleted: false };
+
+  await handler(message);
+
+  if (message.receiptHandle) {
+    await deleteMessage(queueUrl, message.receiptHandle, sqs);
+    return { processed: true, deleted: true, messageId: message.id };
+  }
+
+  return { processed: true, deleted: false, messageId: message.id };
+}
+
+/**
+ * Read approximate visible, in-flight, and delayed message counts.
+ *
+ * @example
+ * const counts = await getApproximateQueueCounts(queueUrl);
+ */
 export async function getApproximateQueueCounts(
   queueUrl: string,
   sqs: SQSClient = defaultClient
@@ -252,6 +406,12 @@ export async function getApproximateQueueCounts(
   }
 }
 
+/**
+ * Remove all available messages from a queue.
+ *
+ * @example
+ * await purgeQueue(queueUrl);
+ */
 export async function purgeQueue(queueUrl: string, sqs: SQSClient = defaultClient): Promise<void> {
   try {
     await sqs.send(new PurgeQueueCommand({ QueueUrl: queueUrl }));
@@ -260,6 +420,12 @@ export async function purgeQueue(queueUrl: string, sqs: SQSClient = defaultClien
   }
 }
 
+/**
+ * Delete a queue; undefined or already-deleted queues are treated as cleaned up.
+ *
+ * @example
+ * await deleteQueue(queueUrl);
+ */
 export async function deleteQueue(queueUrl: string | undefined, sqs: SQSClient = defaultClient): Promise<void> {
   if (!queueUrl) return;
   try {

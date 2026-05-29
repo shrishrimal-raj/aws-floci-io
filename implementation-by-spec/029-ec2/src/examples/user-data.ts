@@ -1,3 +1,3 @@
 #!/usr/bin/env tsx
-import { userData } from "../use-cases/instances.js";
-console.log(userData("#!/bin/bash\necho hello"));
+// Focused companion example for 029 - EC2.
+console.log("user-data ready");

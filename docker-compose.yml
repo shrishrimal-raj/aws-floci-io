@@ -43,3 +43,17 @@ services:
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin#12345
       - bootstrap.memory_lock=true
       - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+
+  floci-ui:
+    image: floci/floci-ui:latest
+    container_name: floci-ui
+    ports:
+      - "3000:3000"
+    environment:
+      - FLOCI_ENDPOINT=http://floci:4566
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    depends_on:
+      floci:
+        condition: service_healthy

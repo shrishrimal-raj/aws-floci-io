@@ -1,6 +1,6 @@
 # 016 - EventBridge Scheduler
 
-> Modern one-time, rate, and cron schedules with JSON target input, flexible windows disabled for deterministic labs, and idempotent cleanup.
+Enterprise scheduling patterns for one-time, rate, and cron jobs with JSON target input, DLQ/retry delivery, audit events, lifecycle cleanup, observability, cost controls, and disaster recovery planning.
 
 ## Quick start
 
@@ -14,63 +14,92 @@ pnpm test
 pnpm cleanup
 ```
 
-## Module
+## Module map
 
 - `src/client.ts` - EventBridge Scheduler SDK v3 client for Floci (`http://localhost:4566`).
-- `src/use-cases/schedules.ts` - rate/cron/at expression helpers, target builder, schedule create/get/delete.
-- `src/examples/basic-schedule.ts` - create a simple recurring schedule.
-- `src/examples/cron-expression.ts` - build `rate`, `cron`, and `at` expressions.
-- `src/examples/target-input.ts` - create schedule with JSON target input.
-- `scripts/setup.ts` - creates lab schedule.
-- `scripts/seed.ts` - creates fixture schedule/event input.
-- `scripts/cleanup.ts` - deletes lab schedule.
+- `src/use-cases/schedules.ts` - expression helpers, target builder, create/get/delete, audit, lifecycle, observability, cost.
+- `src/examples/` - practical enterprise scenarios.
+- `scripts/` - lab setup, seed, cleanup commands.
 
-## Operations covered
+## Functions covered
 
-| Operation | Function | Notes |
+| Function | Purpose | Practical use |
 |---|---|---|
-| Rate expression | `everyMinutes` | Builds `rate(n minutes)`. |
-| Cron expression | `cronExpression` | Builds six-field EventBridge cron expression. |
-| One-time expression | `atExpression` | Converts ISO timestamp to `at(...)`. |
-| Target builder | `scheduleTarget` | Target ARN, role ARN, optional JSON input. |
-| Create schedule | `createSchedule` | Generic helper for any schedule expression. |
-| Create rate schedule | `createRateSchedule` | Convenience recurring schedule helper. |
-| Create one-time schedule | `createOneTimeSchedule` | Convenience one-shot helper. |
-| Get schedule | `getSchedule` | Reads schedule definition and target. |
-| Delete schedule | `deleteSchedule` | Idempotent cleanup for missing schedules. |
+| `validateScheduleName` | Validates AWS-safe schedule names. | Tenant/user-generated schedules with clean audit logs. |
+| `everyMinutes` | Builds `rate(n minutes)`. | Pollers, sync jobs, retry drains. |
+| `cronExpression` | Builds Scheduler cron expressions. | Nightly exports, quarterly reports, weekly DR checks. |
+| `atExpression` | Builds one-time `at(...)` expressions. | Trial reminders, delayed cleanup, contract renewal. |
+| `scheduleTarget` | Creates target with role, input, DLQ, retry policy. | Invoke Lambda/SQS/Step Functions safely. |
+| `createSchedule` | Creates generic schedule. | Full enterprise options: group, timezone, flexible window, cleanup. |
+| `createRateSchedule` | Creates recurring rate schedule. | Every-5-minute payment retry orchestration. |
+| `createOneTimeSchedule` | Creates one-shot schedule with delete-after-completion. | Customer notification or temp resource cleanup. |
+| `getSchedule` | Reads schedule definition. | Admin UI, runbook, drift checks. |
+| `deleteSchedule` | Idempotent schedule deletion. | Tests, tenant offboarding, one-time cleanup. |
+| `createSchedulerRetryPolicy` | Standard delivery retry policy. | Tune retry age/attempts by workload risk. |
+| `buildTenantScheduleInput` | Tenant-aware JSON payload. | Multi-tenant worker input with traceability. |
+| `createSchedulerAuditEvent` | SIEM/EventBridge-ready audit event. | Track actor, target, ticket, outcome, reason. |
+| `createScheduleLifecyclePolicy` | Retention, cleanup, backup, DR plan. | Regulated schedules and one-time job cleanup. |
+| `createScheduleObservabilityPlan` | Metrics, alarms, logs, dashboard, runbook. | Monitor failed invocations and DLQ messages. |
+| `estimateSchedulerMonthlyCost` | Invocation cost estimate. | Compare per-tenant schedules vs batched fan-out. |
+| `shouldDeleteOneTimeSchedule` | Detects fired `at(...)` schedules. | Cleanup worker removes old temporary schedules. |
 
-## Use cases
+## Enterprise examples
+
+Run pure planning examples with `pnpm tsx src/examples/<file>.ts`. Examples that create schedules require Floci or AWS-compatible endpoint.
+
+- `basic-schedule.ts` - create/delete simple recurring schedule.
+- `cron-expression.ts` - rate, cron, and at expression basics.
+- `target-input.ts` - schedule with JSON target input.
+- `tenant-nightly-export.ts` - Lambda tenant export with DLQ, retries, lifecycle, observability, cost, audit.
+- `subscription-renewal-reminder.ts` - one-time SQS customer reminder with delete-after-completion cleanup.
+- `payment-retry-orchestration.ts` - recurring Step Functions retry drain for event-driven payments.
+- `compliance-evidence-collection.ts` - quarterly GRC evidence collection with long retention.
+- `disaster-recovery-recreate-plan.ts` - cross-region schedule recreation plan for DR restore validation.
+- `cost-optimized-tenant-fanout.ts` - cost comparison for per-tenant schedules vs batched fan-out.
+
+## Minimal use
 
 ```ts
-import { createSchedule, everyMinutes, scheduleTarget, deleteSchedule } from "./src/index.js";
+import { createSchedule, cronExpression, scheduleTarget, createSchedulerRetryPolicy } from "./src/index.js";
 
 const target = scheduleTarget(
-  "arn:aws:sqs:us-east-1:000000000000:jobs",
-  "arn:aws:iam::000000000000:role/scheduler-target",
-  { job: "sync" }
+  "arn:aws:lambda:us-east-1:111122223333:function:tenant-export-worker",
+  "arn:aws:iam::111122223333:role/scheduler-invoke-tenant-export",
+  { tenantId: "acme", jobType: "nightly-export" },
+  {
+    deadLetterQueueArn: "arn:aws:sqs:us-east-1:111122223333:tenant-export-dlq",
+    retryPolicy: createSchedulerRetryPolicy("standard"),
+  },
 );
-await createSchedule({ name: "sync-every-15", expression: everyMinutes(15), target });
-await deleteSchedule("sync-every-15");
+
+await createSchedule({
+  name: "tenant-acme-nightly-export",
+  groupName: "tenant-data-jobs",
+  expression: cronExpression("0", "2"),
+  timezone: "UTC",
+  flexibleWindowMinutes: 15,
+  target,
+});
 ```
 
 ## Runbook
 
 1. Start Floci: `docker compose up -d`.
-2. Check health: `pnpm run floci:health` from repo root.
+2. Check health from repo root: `pnpm run floci:health`.
 3. Provision schedule: `pnpm setup`.
 4. Seed fixture schedule/input: `pnpm seed`.
-5. Run tests: `pnpm test`.
-6. Cleanup schedule: `pnpm cleanup`.
+5. Run tests: `pnpm test` and `pnpm typecheck`.
+6. Cleanup schedules: `pnpm cleanup`.
 
 ## Gotchas
 
-- Scheduler targets require an IAM role that allows invoking target service in real AWS.
-- `at(...)` timestamps do not include trailing `Z` in Scheduler expression syntax.
-- One-shot schedules are not automatically deleted after firing; clean them up if they are temporary.
-- Flexible time windows can reduce load spikes but make timing less exact; lab uses `OFF`.
-- Time zones matter for cron schedules; prefer UTC unless product requires local time.
-- Configure retry policy and DLQ for target failures in production.
+- Target execution role must allow Scheduler to invoke target service.
+- Use DLQ and retry policy for production target failures.
+- One-time schedules should use `ActionAfterCompletion: DELETE` or cleanup worker.
+- Flexible windows reduce cost/throttle spikes but make timing less exact.
+- Prefer UTC unless product explicitly needs local timezone.
+- For huge tenant fleets, batch fan-out can reduce cost and quota pressure.
 
 ## Floci vs Real AWS
 
-Floci support: **partial** for this lab. On real AWS, configure target execution role, retry policy, DLQ, schedule groups, time zones, flexible windows, one-shot cleanup, CloudWatch metrics, and least-privilege IAM. Real AWS also has per-schedule quotas, target-specific permissions, delivery retries, schedule group ARNs, and pricing that local Floci does not fully model.
+Floci support is **partial**. Real AWS requires target execution role trust/permissions, schedule groups, DLQ, retry policy, time zones, flexible windows, one-shot cleanup, CloudWatch metrics, IAM least privilege, quotas, pricing review, and regional DR recreation metadata.

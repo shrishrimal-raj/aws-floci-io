@@ -7,10 +7,12 @@ export interface ImageRef {
   tag: string;
 }
 
+/** Builds canonical ECR image URI used by ECS/EKS task specs and rollback runbooks. */
 export function imageUri(ref: ImageRef): string {
   return `${ref.accountId}.dkr.ecr.${ref.region}.amazonaws.com/${ref.repository}:${ref.tag}`;
 }
 
+/** Creates practical Docker build/login/push commands for CI pipelines. */
 export function dockerBuildPushCommands(ref: ImageRef, dockerfile = "Dockerfile", context = "."): string[] {
   const uri = imageUri(ref);
   return [
@@ -20,9 +22,11 @@ export function dockerBuildPushCommands(ref: ImageRef, dockerfile = "Dockerfile"
   ];
 }
 
+/** ECR repository helper that enforces scan-on-push and server-side encryption. */
 export class EcrRepository {
   constructor(private readonly ecr: ECRClient) {}
 
+  /** Creates an image repository for a service and returns its URI. */
   async ensure(name: string): Promise<string | undefined> {
     const result = await this.ecr.send(
       new CreateRepositoryCommand({
@@ -34,6 +38,7 @@ export class EcrRepository {
     return result.repository?.repositoryUri;
   }
 
+  /** Reads temporary ECR Docker login password for controlled build agents. */
   async loginPassword(): Promise<string> {
     const result = await this.ecr.send(new GetAuthorizationTokenCommand({}));
     const token = result.authorizationData?.[0]?.authorizationToken;

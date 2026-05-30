@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
-import { waitForFloci } from "@floci-lab/test-utils";
 import { client } from "../src/client.js";
 import type { CloudWatchLogsError } from "../src/errors.js";
 import { createLogGroup, filterLogs, structuredLog } from "../src/use-cases/logs.js";
@@ -10,7 +9,6 @@ function failingClient(name: string): CloudWatchLogsClient {
 }
 
 describe("CloudWatch Logs", () => {
-  beforeAll(async () => waitForFloci());
   it("client is configured against Floci", () => expect(client).toBeDefined());
   it("supports local pure helpers", () => { expect(structuredLog("INFO", "ok", { requestId: "r1" })).toMatchObject({ level: "INFO", message: "ok", requestId: "r1" }); });
   it("wraps primary failures", async () => {

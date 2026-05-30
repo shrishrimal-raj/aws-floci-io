@@ -17,6 +17,10 @@ export interface EventClients {
   firehose: FirehoseClient;
 }
 
+/**
+ * Creates all AWS SDK clients used by Phase 04 advanced event systems.
+ * Example: local demos point to LocalStack by default; production passes region/credentials through shared AWS config.
+ */
 export function createEventClients(options: AwsClientOptions = {}): EventClients {
   const endpoint = options.endpoint ?? process.env.AWS_ENDPOINT_URL ?? "http://localhost:4566";
   const defaults = awsDefaults({ endpoint, ...options });

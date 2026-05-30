@@ -12,6 +12,11 @@ export interface TransactionalEmail {
 export class SesMailer {
   constructor(private readonly ses: SESClient) {}
 
+  /**
+   * Sends transactional email through SES v1 API.
+   *
+   * Example: send delivery-failure alert to tenant admin when webhook endpoint enters DLQ.
+   */
   async send(input: TransactionalEmail): Promise<void> {
     await this.ses.send(
       new SendEmailCommand({
@@ -29,6 +34,11 @@ export class SesMailer {
 export class SesV2Mailer {
   constructor(private readonly ses: SESv2Client) {}
 
+  /**
+   * Sends transactional email through SES v2 API.
+   *
+   * Example: modern production services use SES v2 with configuration sets for bounce/complaint observability.
+   */
   async send(input: TransactionalEmail): Promise<void> {
     await this.ses.send(
       new SendEmailV2Command({
@@ -43,4 +53,22 @@ export class SesV2Mailer {
       })
     );
   }
+}
+
+/**
+ * Builds tenant-safe webhook failure email content.
+ *
+ * Example: notify customer success and tenant admin with endpoint ID, event ID, and remediation hint without leaking secret payloads.
+ */
+export function webhookFailureEmail(input: {
+  from: string;
+  to: string;
+  tenantId: string;
+  endpointId: string;
+  eventId: string;
+  statusCode?: number;
+}): TransactionalEmail {
+  const subject = `[TaskFlow] Webhook delivery failed for ${input.endpointId}`;
+  const text = `Tenant ${input.tenantId} webhook ${input.endpointId} failed for event ${input.eventId}. Status: ${input.statusCode ?? "network"}. Review endpoint health and replay from DLQ.`;
+  return { from: input.from, to: input.to, subject, text, html: `<p>${text}</p>` };
 }

@@ -1,74 +1,44 @@
 # 015 - EventBridge
 
-> Event buses, rules, targets, event patterns, single-event publishing, batch publishing, and dependency-safe cleanup.
+EventBridge learning module for custom buses, event patterns, rules, targets, typed publishing, durable delivery, and enterprise event operations.
 
 ## Quick start
 
 ```bash
-docker compose up -d
 pnpm install
-cd implementation-by-spec/015-eventbridge
-pnpm setup
-pnpm seed
-pnpm test
-pnpm cleanup
+pnpm --filter @floci-lab/eventbridge test
+pnpm --filter @floci-lab/eventbridge setup
+pnpm --filter @floci-lab/eventbridge seed
+pnpm --filter @floci-lab/eventbridge cleanup
 ```
 
 ## Module
 
-- `src/client.ts` - EventBridge SDK v3 client for Floci (`http://localhost:4566`).
-- `src/use-cases/events.ts` - bus creation, event patterns, rules, targets, single/batch publishing, rule/bus cleanup.
-- `src/examples/basic-event.ts` - create bus, publish event, cleanup.
-- `src/examples/batch-events.ts` - publish multiple typed events in one request.
-- `src/examples/rule-target.ts` - build event pattern and attach target to rule.
-- `scripts/setup.ts` - creates lab bus/rule.
-- `scripts/seed.ts` - publishes fixture event.
-- `scripts/cleanup.ts` - removes targets/rules and deletes bus.
+- `src/client.ts` - EventBridge SDK v3 client for Floci or AWS endpoint.
+- `src/use-cases/events.ts` - create/delete bus, build patterns, create rules, attach targets with retry/DLQ, publish single/batch events, cleanup rules.
+- `src/use-cases/enterprise.ts` - tenant access guard, standard event envelope, audit events, retry backoff, safe batching, durable targets, tenant filters, archive/replay plan, observability plan, cost estimate.
+- `src/examples/basic-event.ts` - create bus, publish one event, cleanup.
+- `src/examples/batch-events.ts` - publish multiple typed events.
+- `src/examples/rule-target.ts` - create pattern and attach target.
+- `src/examples/secure-saas-order-routing.ts` - secure multi-tenant order event flow with audit envelope.
+- `src/examples/durable-target-dlq.ts` - target retry and DLQ delivery pattern.
+- `src/examples/batch-invoice-publishing.ts` - PutEvents batching and cost estimate.
+- `src/examples/compliance-archive-replay.ts` - audit, archive, and replay planning.
+- `src/examples/observability-cost-dr.ts` - alarms, cost, and recovery runbook.
 
-## Operations covered
+## Enterprise patterns
 
-| Operation | Function | Notes |
-|---|---|---|
-| Create bus | `createBus` | Custom bus; existing bus returns name for lab idempotency. |
-| Event pattern | `eventPattern` | Matches `source` and `detail-type`. |
-| Put rule | `putRule` | Creates rule with JSON event pattern. |
-| Put target | `putTarget` | Attaches target ARN to rule. |
-| Rule + target | `putRuleTarget` | Creates rule and attaches one target. |
-| Publish event | `publishEvent` | Sends one JSON event to bus. |
-| Publish batch | `publishEvents` | Sends multiple events in one `PutEvents` call. |
-| Delete rule | `deleteRuleWithTargets` | Removes targets first, then deletes rule. |
-| Delete bus | `deleteBus` | Idempotent cleanup for missing buses. |
+Use tenant-scoped events with `tenantId`, `eventId`, `schemaVersion`, `correlationId`, and `producer`. Route with explicit source/detail-type patterns, add DLQs and retry policy to targets, publish in batches of 10, log audit events, and plan archive/replay windows for recovery.
 
-## Use cases
+## Floci vs real AWS
 
-```ts
-import { createBus, putRuleTarget, publishEvent, deleteRuleWithTargets, deleteBus } from "./src/index.js";
+Floci covers core EventBridge commands for local learning. Real AWS needs IAM permissions, resource policies, cross-account buses, target-specific roles, schema governance, archive/replay setup, CloudWatch alarms, DLQ monitoring, event size checks, and cost controls.
 
-await createBus("orders");
-await putRuleTarget("orders-created", "orders", "app.orders", "order.created", "arn:aws:sqs:us-east-1:000000000000:orders");
-await publishEvent("orders", "app.orders", "order.created", { orderId: "o1" });
-await deleteRuleWithTargets("orders-created", "orders", ["target"]);
-await deleteBus("orders");
-```
+## Production checklist
 
-## Runbook
-
-1. Start Floci: `docker compose up -d`.
-2. Check health: `pnpm run floci:health` from repo root.
-3. Provision bus/rule: `pnpm setup`.
-4. Publish fixture event: `pnpm seed`.
-5. Run tests: `pnpm test`.
-6. Cleanup targets/rules/bus: `pnpm cleanup`.
-
-## Gotchas
-
-- Event pattern field is `detail-type`, while SDK input field is `DetailType`.
-- PutEvents accepts JSON strings for `Detail`; stringify objects once.
-- Targets often need resource policies/permissions in real AWS (SQS, Lambda, cross-account buses).
-- Delete order matters: remove targets before deleting rules, delete rules before custom bus.
-- EventBridge delivery is asynchronous. Consumers must be idempotent and retry-safe.
-- Use DLQs/retry policies for targets that can fail.
-
-## Floci vs Real AWS
-
-Floci support: **partial** for this lab. On real AWS, configure archives/replay, schema registry, bus policies, cross-account routing, target retry/DLQ settings, CloudWatch metrics/alarms, and least-privilege IAM. Real AWS also has event size limits, PutEvents batch limits, eventual delivery, per-event pricing, target-specific permissions, and archive/replay costs that local Floci does not fully model.
+- Secure access: tenant and role checks before publishing.
+- Audit: publish immutable audit events for attempts, success, failure, denied actions.
+- Reliability: retries with jitter, target DLQs, idempotent consumers, replay plan.
+- Lifecycle: archive retention based on compliance and recovery needs.
+- Observability: alarms for failed invocations, throttles, DLQ depth, failed PutEvents entries.
+- Cost: batch events, filter early, avoid noisy rules, track monthly event volume.

@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "auth:demo": "tsx major-projects/zero-trust-saas-auth-layer/src/demo.ts"
+    "auth:demo": "tsx major-projects/zero-trust-saas-auth-layer/src/demo.ts",
+    "auth:enterprise": "tsx major-projects/zero-trust-saas-auth-layer/src/scenarios/enterprise-zero-trust-platform.ts"
   },
   "dependencies": {
     "@aws-sdk/client-acm": "^3.700.0",

@@ -22,6 +22,8 @@ export interface EnvelopeDataKey {
   encryptedKey: Uint8Array;
 }
 
+export type EncryptionContext = Record<string, string>;
+
 function awsErrorName(error: unknown): string {
   if (error instanceof KMSError && error.cause instanceof Error) return error.cause.name;
   return error instanceof Error ? error.name : "";
@@ -108,9 +110,9 @@ export async function describeKey(keyId: string, kms: KMSClient = defaultClient)
  * @example
  * const ciphertext = await encryptString(keyId, "secret");
  */
-export async function encryptString(keyId: string, plaintext: string, kms: KMSClient = defaultClient): Promise<Uint8Array> {
+export async function encryptString(keyId: string, plaintext: string, kms: KMSClient = defaultClient, encryptionContext?: EncryptionContext): Promise<Uint8Array> {
   try {
-    const result = await kms.send(new EncryptCommand({ KeyId: keyId, Plaintext: new TextEncoder().encode(plaintext) }));
+    const result = await kms.send(new EncryptCommand({ KeyId: keyId, Plaintext: new TextEncoder().encode(plaintext), EncryptionContext: encryptionContext }));
     return requireValue(result.CiphertextBlob, "CiphertextBlob");
   } catch (error) {
     wrapError("encryptString", error);
@@ -123,9 +125,9 @@ export async function encryptString(keyId: string, plaintext: string, kms: KMSCl
  * @example
  * const plaintext = await decryptString(ciphertext);
  */
-export async function decryptString(ciphertext: Uint8Array, kms: KMSClient = defaultClient): Promise<string> {
+export async function decryptString(ciphertext: Uint8Array, kms: KMSClient = defaultClient, encryptionContext?: EncryptionContext): Promise<string> {
   try {
-    const plaintext = (await kms.send(new DecryptCommand({ CiphertextBlob: ciphertext }))).Plaintext;
+    const plaintext = (await kms.send(new DecryptCommand({ CiphertextBlob: ciphertext, EncryptionContext: encryptionContext }))).Plaintext;
     return plaintext ? new TextDecoder().decode(plaintext) : "";
   } catch (error) {
     wrapError("decryptString", error);
@@ -141,10 +143,11 @@ export async function decryptString(ciphertext: Uint8Array, kms: KMSClient = def
 export async function generateDataKey(
   keyId: string,
   bytes = 32,
-  kms: KMSClient = defaultClient
+  kms: KMSClient = defaultClient,
+  encryptionContext?: EncryptionContext
 ): Promise<GenerateDataKeyCommandOutput> {
   try {
-    return await kms.send(new GenerateDataKeyCommand({ KeyId: keyId, NumberOfBytes: bytes }));
+    return await kms.send(new GenerateDataKeyCommand({ KeyId: keyId, NumberOfBytes: bytes, EncryptionContext: encryptionContext }));
   } catch (error) {
     wrapError("generateDataKey", error);
   }
@@ -159,9 +162,10 @@ export async function generateDataKey(
 export async function generateEnvelopeDataKey(
   keyId: string,
   bytes = 32,
-  kms: KMSClient = defaultClient
+  kms: KMSClient = defaultClient,
+  encryptionContext?: EncryptionContext
 ): Promise<EnvelopeDataKey> {
-  const result = await generateDataKey(keyId, bytes, kms);
+  const result = await generateDataKey(keyId, bytes, kms, encryptionContext);
   return {
     plaintextKey: requireValue(result.Plaintext, "Plaintext"),
     encryptedKey: requireValue(result.CiphertextBlob, "CiphertextBlob"),

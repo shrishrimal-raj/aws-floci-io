@@ -1,4 +1,5 @@
 export * from "./cognito.js";
+export * from "./enterprise-patterns.js";
 export * from "./iam-policy.js";
 export * from "./jwt-auth.js";
 export * from "./kms-secret-store.js";

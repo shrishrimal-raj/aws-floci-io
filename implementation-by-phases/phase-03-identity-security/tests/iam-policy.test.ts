@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluatePolicy, findOverbroadStatements, tenantTaskPolicy, trustPolicyForPrincipal } from "../src/iam-policy.js";
+import { denyActions, evaluatePolicy, findOverbroadStatements, tenantTaskPolicy, trustPolicyForPrincipal } from "../src/iam-policy.js";
 
 describe("least-privilege IAM policies", () => {
   it("allows tenant-scoped DynamoDB and S3 actions", () => {
@@ -8,6 +8,8 @@ describe("least-privilege IAM policies", () => {
     expect(evaluatePolicy(policy, "s3:PutObject", "arn:aws:s3:::taskflow/tenants/tenant-a/file.txt")).toBe("allow");
     expect(evaluatePolicy(policy, "s3:DeleteObject", "arn:aws:s3:::taskflow/tenants/tenant-a/file.txt")).toBe("implicitDeny");
     expect(findOverbroadStatements(policy)).toEqual([]);
+    policy.Statement.push(denyActions(["s3:DeleteObject"]));
+    expect(evaluatePolicy(policy, "s3:DeleteObject", "arn:aws:s3:::taskflow/tenants/tenant-a/file.txt")).toBe("explicitDeny");
   });
 
   it("builds trust policy with external id", () => {

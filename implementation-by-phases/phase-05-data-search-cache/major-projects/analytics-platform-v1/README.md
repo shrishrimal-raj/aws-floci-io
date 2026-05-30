@@ -1,18 +1,19 @@
 # Analytics Platform v1
 
-Kinesis → Firehose → S3 Parquet → Glue → Athena → Redis dashboard cache pattern.
+Hands-on enterprise example for multi-tenant commerce analytics.
 
-## Capabilities
+## Scenarios
 
-- Bronze/silver/gold data lake path conventions.
-- Explicit Glue catalog table for partitioned Parquet events.
-- Athena query guard requiring tenant/date partition predicates.
-- Redis-style dashboard cache.
-- Postgres + read-through cache pattern for operational data.
-- OpenSearch product full-text/vector mapping.
+1. **Enterprise commerce search** - secure catalog indexing with tenant RBAC, audit logging, and retry backoff.
+2. **Cost-optimized dashboard** - Athena partition SQL, Redis dashboard cache, and CloudWatch-style metrics.
+3. **Compliance data lake** - bronze/silver/gold event partitioning, S3 lifecycle retention, resource tags, backup/DR plan, cache invalidation.
 
-## Demo
+## Run
 
 ```bash
 pnpm --filter @floci-lab/phase-05 analytics:demo
 ```
+
+## Learn
+
+Start with `src/demo.ts`, then open each scenario file in `src/`. Examples avoid real AWS writes by using local/in-memory adapters where possible and show where production AWS clients fit.

@@ -8,7 +8,11 @@
     "test:watch": "vitest",
     "setup": "tsx scripts/setup.ts",
     "seed": "tsx scripts/seed.ts",
-    "cleanup": "tsx scripts/cleanup.ts"
+    "cleanup": "tsx scripts/cleanup.ts",
+    "example:tenant-context": "tsx src/examples/tenant-encryption-context.ts",
+    "example:envelope-pii": "tsx src/examples/envelope-encryption-pii.ts",
+    "example:compliance": "tsx src/examples/key-policy-compliance.ts",
+    "example:dr": "tsx src/examples/disaster-recovery-runbook.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.700.0",

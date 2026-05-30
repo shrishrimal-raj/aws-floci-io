@@ -1,5 +1,6 @@
 import { CreateChangeSetCommand, DetectStackDriftCommand, type CloudFormationClient } from "@aws-sdk/client-cloudformation";
 
+/** Creates a small multi-AZ VPC template with public/private subnet separation. */
 export function vpcTemplate(): Record<string, unknown> {
   return {
     AWSTemplateFormatVersion: "2010-09-09",
@@ -15,6 +16,7 @@ export function vpcTemplate(): Record<string, unknown> {
   };
 }
 
+/** Performs fast local IaC sanity checks before creating CloudFormation change sets. */
 export function validateTemplateBasics(template: Record<string, unknown>): string[] {
   const errors: string[] = [];
   if (!template.Resources || typeof template.Resources !== "object") errors.push("Resources missing");
@@ -24,9 +26,11 @@ export function validateTemplateBasics(template: Record<string, unknown>): strin
   return errors;
 }
 
+/** CloudFormation helper for safe change-set-first deployments and drift detection. */
 export class StackManager {
   constructor(private readonly cloudFormation: CloudFormationClient) {}
 
+  /** Creates a named change set so operators can review infrastructure impact first. */
   async createChangeSet(stackName: string, template: Record<string, unknown>): Promise<string | undefined> {
     const result = await this.cloudFormation.send(
       new CreateChangeSetCommand({ StackName: stackName, ChangeSetName: `${stackName}-${Date.now()}`, ChangeSetType: "CREATE", TemplateBody: JSON.stringify(template), Capabilities: ["CAPABILITY_IAM"] })
@@ -34,6 +38,7 @@ export class StackManager {
     return result.Id;
   }
 
+  /** Starts drift detection after recovery/manual fixes to prove stack state. */
   async detectDrift(stackName: string): Promise<string | undefined> {
     const result = await this.cloudFormation.send(new DetectStackDriftCommand({ StackName: stackName }));
     return result.StackDriftDetectionId;

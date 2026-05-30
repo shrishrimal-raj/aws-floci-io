@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { base64UrlEncode, decodeJwt, verifyCognitoClaims, verifyJwtSignature, type CognitoClaims } from "../src/jwt-auth.js";
+import { authContextFromClaims, base64UrlEncode, decodeJwt, verifyCognitoClaims, verifyJwtSignature, type CognitoClaims } from "../src/jwt-auth.js";
 
 function makeSignedJwt(claims: CognitoClaims) {
   const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -25,6 +25,7 @@ describe("Cognito JWT auth", () => {
     const { token, publicKeyPem } = makeSignedJwt(claims);
     expect(decodeJwt(token).claims.sub).toBe("user-1");
     expect(verifyJwtSignature(token, publicKeyPem).aud).toBe("client-1");
+    expect(authContextFromClaims(claims)).toMatchObject({ tenantId: "tenant-a", subject: "user-1" });
   });
 
   it("validates issuer, audience, expiry, token use, tenant claim", () => {

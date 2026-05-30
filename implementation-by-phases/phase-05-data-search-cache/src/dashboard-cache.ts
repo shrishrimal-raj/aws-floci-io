@@ -7,10 +7,18 @@ export interface DashboardQueryKey {
   to: string;
 }
 
+/**
+ * Creates deterministic dashboard result cache keys scoped by tenant and time range.
+ * Example: finance KPI dashboard for tenant-a in May never shares cache with tenant-b.
+ */
 export function dashboardCacheKey(input: DashboardQueryKey): string {
   return tenantCacheKey(input.tenantId, "dashboard", `${input.dashboardId}:${input.from}:${input.to}`);
 }
 
+/**
+ * Cache-aside helper for expensive Athena/OpenSearch dashboard queries.
+ * Example: compute KPI once per minute, serve repeated executive dashboard refreshes from Redis.
+ */
 export class DashboardCache {
   constructor(private readonly cache: CacheClient, private readonly ttlSeconds = 60) {}
 

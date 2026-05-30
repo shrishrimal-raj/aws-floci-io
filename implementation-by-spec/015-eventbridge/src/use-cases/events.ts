@@ -18,6 +18,12 @@ export interface EventRuleTarget {
   targetArn: string;
 }
 
+export interface EventTargetOptions {
+  deadLetterArn?: string;
+  maxRetryAttempts?: number;
+  maxEventAgeSeconds?: number;
+}
+
 export interface AppEvent<TDetail> {
   eventBusName: string;
   source: string;
@@ -85,20 +91,37 @@ export async function putRule(
 }
 
 /**
- * Attach target ARN to rule.
+ * Attach target ARN to rule, optionally with retry policy and DLQ for durable delivery.
  *
  * @example
- * await putTarget("orders-created", "orders", queueArn, "orders-queue");
+ * await putTarget("orders-created", "orders", queueArn, "orders-queue", client, { deadLetterArn: dlqArn });
  */
 export async function putTarget(
   rule: string,
   eventBusName: string,
   targetArn: string,
   id = "target",
-  eb: EventBridgeClient = defaultClient
+  eb: EventBridgeClient = defaultClient,
+  options: EventTargetOptions = {}
 ): Promise<void> {
   try {
-    await eb.send(new PutTargetsCommand({ Rule: rule, EventBusName: eventBusName, Targets: [{ Id: id, Arn: targetArn }] }));
+    await eb.send(
+      new PutTargetsCommand({
+        Rule: rule,
+        EventBusName: eventBusName,
+        Targets: [
+          {
+            Id: id,
+            Arn: targetArn,
+            DeadLetterConfig: options.deadLetterArn ? { Arn: options.deadLetterArn } : undefined,
+            RetryPolicy:
+              options.maxRetryAttempts || options.maxEventAgeSeconds
+                ? { MaximumRetryAttempts: options.maxRetryAttempts, MaximumEventAgeInSeconds: options.maxEventAgeSeconds }
+                : undefined,
+          },
+        ],
+      })
+    );
   } catch (error) {
     wrapError("putTarget", error);
   }
@@ -147,7 +170,7 @@ export async function publishEvent(
 }
 
 /**
- * Publish multiple typed events in one PutEvents request.
+ * Publish multiple typed events in one PutEvents request. EventBridge accepts up to 10 entries per request.
  *
  * @example
  * const ids = await publishEvents([{ eventBusName: "orders", source: "app", detailType: "created", detail: {} }]);

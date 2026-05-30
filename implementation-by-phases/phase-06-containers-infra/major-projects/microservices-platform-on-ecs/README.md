@@ -1,19 +1,24 @@
 # Microservices Platform on ECS
 
-Multi-service backend on ECS Fargate behind ALB with IaC and blue/green routing.
+Hands-on enterprise platform: four services on ECS Fargate, ALB ingress, Route53 blue/green routing, CloudFormation network IaC, EKS IRSA comparison, and operations guardrails.
 
 ## Capabilities
 
-- ECR image workflow for service containers.
+- ECR image workflow with scan-on-push and lifecycle policy.
 - ECS Fargate task/service definitions for auth, catalog, orders, payments.
-- ALB target groups and health checks.
-- Route53 weighted aliases for blue/green traffic shifts.
-- CloudFormation VPC/subnet template + change set/drift flow.
+- Private subnet service placement with public ALB ingress.
+- ALB target groups, health checks, and Route53 weighted canary shifts.
+- CloudFormation VPC/subnet template, change sets, and drift detection.
 - ECS target tracking autoscaling.
-- EKS IRSA manifests for pod identity comparison.
+- Audit events, retry strategy, EventBridge-style deployment events.
+- CloudWatch dashboard body, Fargate cost estimate, DR runbook, compliance findings.
+- EKS IRSA service-account and deployment manifests for workload identity.
 
-## Demo
+## Demos
 
 ```bash
 pnpm --filter @floci-lab/phase-06 platform:demo
+pnpm --filter @floci-lab/phase-06 platform:enterprise-demo
 ```
+
+Use `platform:demo` for quick primitive overview. Use `platform:enterprise-demo` for full enterprise scenario with secure access, audit, retries, lifecycle, observability, cost, DR, and compliance.

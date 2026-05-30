@@ -6,6 +6,7 @@ export interface IrsaTrustInput {
   serviceAccount: string;
 }
 
+/** Builds IAM trust policy for EKS IRSA least-privilege pod access. */
 export function irsaTrustPolicy(input: IrsaTrustInput): Record<string, unknown> {
   return {
     Version: "2012-10-17",
@@ -25,6 +26,7 @@ export function irsaTrustPolicy(input: IrsaTrustInput): Record<string, unknown> 
   };
 }
 
+/** Creates Kubernetes ServiceAccount manifest annotated with IAM role ARN. */
 export function serviceAccountManifest(namespace: string, name: string, roleArn: string): Record<string, unknown> {
   return {
     apiVersion: "v1",
@@ -33,6 +35,7 @@ export function serviceAccountManifest(namespace: string, name: string, roleArn:
   };
 }
 
+/** Creates Kubernetes Deployment manifest with service account and readiness probe. */
 export function deploymentManifest(name: string, image: string, serviceAccountName: string, port = 3000): Record<string, unknown> {
   return {
     apiVersion: "apps/v1",

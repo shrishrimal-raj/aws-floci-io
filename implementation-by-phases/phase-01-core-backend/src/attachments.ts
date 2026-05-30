@@ -15,6 +15,11 @@ export class AttachmentService {
     private readonly bucket = process.env.TASKFLOW_ATTACHMENTS_BUCKET ?? "taskflow-attachments"
   ) {}
 
+  /**
+   * Creates tenant-scoped presigned S3 upload target.
+   *
+   * Example: browser uploads `invoice.pdf` directly to S3 under `tenants/{tenantId}/tasks/{taskId}/...`, keeping API Lambda small and cheap.
+   */
   async createUpload(input: AttachmentUploadRequest, expiresIn = 900): Promise<PresignedUpload> {
     const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
     const key = `tenants/${input.tenantId}/tasks/${input.taskId}/${crypto.randomUUID()}-${safeName}`;

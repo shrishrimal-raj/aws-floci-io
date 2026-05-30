@@ -21,4 +21,10 @@ describe("DynamoDB idempotency store", () => {
     await new IdempotencyStore(client as never).complete("key-1", { id: "payment-1" });
     expect(client.commands[0]?.constructor.name).toBe("UpdateCommand");
   });
+
+  it("marks operation failed with audit response", async () => {
+    const client = new FakeDocClient();
+    await new IdempotencyStore(client as never).fail("key-1", { reason: "validation" });
+    expect(client.commands[0]?.constructor.name).toBe("UpdateCommand");
+  });
 });

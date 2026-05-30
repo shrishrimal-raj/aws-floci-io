@@ -10,15 +10,27 @@ export interface S3Partition {
   day: string;
 }
 
+/**
+ * Builds partitioned S3 prefixes for bronze/silver/gold analytics layers.
+ * Example: checkout events land under `silver/event_type=checkout/tenant_id=t/year=2026/...`.
+ */
 export function lakePrefix(layer: LakeLayer, eventType: string, partition: S3Partition): string {
   return `${layer}/event_type=${eventType}/tenant_id=${partition.tenantId}/year=${partition.year}/month=${partition.month}/day=${partition.day}/`;
 }
 
+/**
+ * Verifies Athena SQL includes tenant/date partition predicates to control scan cost.
+ * Example: dashboards must filter tenant_id/year/month/day before query execution starts.
+ */
 export function requirePartitionPredicate(sql: string): boolean {
   const normalized = sql.toLowerCase().replace(/\s+/g, " ");
   return normalized.includes("where") && ["tenant_id", "year", "month", "day"].every((key) => normalized.includes(key));
 }
 
+/**
+ * Creates explicit Glue table input for partitioned Parquet event data.
+ * Example: platform team owns schema instead of relying on crawler inference drift.
+ */
 export function createEventsTableInput(databaseName: string, tableName: string, location: string): CreateTableCommandInput {
   return {
     DatabaseName: databaseName,
@@ -48,6 +60,10 @@ export function createEventsTableInput(databaseName: string, tableName: string, 
   };
 }
 
+/**
+ * Glue catalog facade for database/table provisioning.
+ * Example: deployment pipeline ensures analytics database and external event table exist.
+ */
 export class GlueCatalog {
   constructor(private readonly glue: GlueClient) {}
 
@@ -60,6 +76,10 @@ export class GlueCatalog {
   }
 }
 
+/**
+ * Athena query facade with mandatory partition guard.
+ * Example: analytics API rejects broad unpartitioned SQL before it creates runaway S3 scan cost.
+ */
 export class AthenaQueries {
   constructor(
     private readonly athena: AthenaClient,

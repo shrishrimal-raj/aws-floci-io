@@ -1,6 +1,6 @@
 # 017 - EventBridge Pipes
 
-> Source-to-target pipes with filters, IAM role, lifecycle, and cleanup.
+Build source-to-target pipes with filters, lifecycle controls, audit logs, retries, monitoring, and cost governance.
 
 ## Quick start
 
@@ -8,57 +8,61 @@
 docker compose up -d
 pnpm install
 cd implementation-by-spec/017-eventbridge-pipes
-pnpm setup
-pnpm seed
+pnpm typecheck
 pnpm test
-pnpm cleanup
+pnpm setup && pnpm seed && pnpm cleanup
 ```
 
-## Module
+## What you learn
 
-- `src/client.ts` - EventBridge Pipes SDK v3 client for Floci (`http://localhost:4566`).
-- `src/use-cases/pipes.ts - pipe create/describe/start/stop/delete and SQS body filter helper.`
-- `src/examples/*` - baseline plus focused runnable examples.
-- `scripts/setup.ts` - provisions lab resources.
-- `scripts/seed.ts` - loads or publishes fixture data.
-- `scripts/cleanup.ts` - tears down lab resources.
+- **Pipe lifecycle**: create, describe, start, stop, delete.
+- **Filtering**: SQS body filters and tenant/event-type filters.
+- **Secure access**: pipe IAM role is required; examples redact ARNs before logs.
+- **Audit logging**: structured audit events for create/start/stop/delete/route actions.
+- **Reliability**: retry transient control-plane failures.
+- **Monitoring**: failure alarm payloads for command-center dashboards.
+- **Lifecycle governance**: stop idle pipes and delete long-stopped pipes.
+- **FinOps**: estimate monthly request-processing cost.
+
+## Key files
+
+- `src/client.ts` - EventBridge Pipes client for Floci endpoint.
+- `src/use-cases/pipes.ts` - all pipe helpers and enterprise utilities.
+- `src/examples/basic-pipe.ts` - create/delete pipe with local ARNs.
+- `src/examples/filter-pattern.ts` - tenant-filtered SQS to EventBridge pattern.
+- `src/examples/lifecycle.ts` - idle lifecycle, cost, and alarm example.
+- `src/examples/enterprise-order-routing.ts` - full enterprise routing scenario.
+- `scripts/setup.ts`, `seed.ts`, `cleanup.ts` - lab lifecycle scripts.
 
 ## Operations covered
 
-| Operation | Function | Notes |
-|---|---|---|
-| Primary create/config | service helper | Provisions local resource or config. |
-| Publish/send/write | service helper | Exercises main data-plane path. |
-| Read/describe/filter | service helper | Verifies state or output. |
-| Cleanup | delete helper | Idempotent teardown. |
-| Pure helpers | helper functions | Build payloads, filters, templates, or encoded records. |
+| Function | Purpose |
+|---|---|
+| `createPipe` | Create source-to-target pipe with optional filter. |
+| `describePipe` | Read pipe configuration/state. |
+| `startPipe` / `stopPipe` | Control delivery without deleting config. |
+| `deletePipe` | Idempotent cleanup. |
+| `sqsToEventBusFilter` / `tenantEventFilter` | Build source filter patterns. |
+| `pipeName` | Stable enterprise naming helper. |
+| `pipeAuditEvent` | Audit event builder. |
+| `redactPipeSpec` | Safe diagnostic view of pipe spec. |
+| `withPipeRetry` | Retry transient failures. |
+| `pipeLifecycleDecision` | Stop/delete idle resources. |
+| `estimatePipeMonthlyCost` | Request-volume cost estimate. |
+| `pipeFailureAlarm` | Monitoring alarm payload helper. |
 
-## Use cases
+## Example commands
 
-```ts
-import { /* helpers */ } from "./src/index.js";
-
-createPipe({ name: "orders-pipe", sourceArn, targetArn, roleArn, filterPattern: sqsToEventBusFilter("order.created") });
+```bash
+pnpm example:filter
+pnpm example:lifecycle
+pnpm example:enterprise
 ```
 
-## Runbook
+## Production notes
 
-1. Start Floci: `docker compose up -d`.
-2. Check health: `pnpm run floci:health` from repo root.
-3. Provision lab resources: `pnpm setup`.
-4. Seed fixtures: `pnpm seed`.
-5. Run tests: `pnpm test`.
-6. Cleanup resources: `pnpm cleanup`.
+Use least-privilege IAM for source, target, and pipe management. Configure filters to reduce cost and downstream load. Add DLQ/failure handling where supported by source/target pattern, alarms for failures/throttling/lag, and idempotent consumers for replay safety.
 
-## Gotchas
+## Floci vs real AWS
 
-- Configure batching, enrichment, DLQs, IAM role, source-specific filters.
-- Keep handlers idempotent and retry-safe.
-- Use least-privilege IAM for source, target, and management APIs.
-- Add metrics/alarms for failures, throttling, and delivery lag.
-- Clean up dependent resources in correct order.
-- Local emulator behavior can differ from service quotas and async delivery in AWS.
-
-## Floci vs Real AWS
-
-Floci support: **partial** for this lab. On real AWS, configure production IAM, retries, DLQs or failure destinations where supported, audit logs, alarms, quotas, and cost controls. Real AWS also has regional quotas, IAM policy evaluation, retry semantics, service-specific pricing, and operational metrics that local Floci does not fully model.
+Floci support is partial. Real AWS adds regional quotas, IAM policy evaluation, CloudWatch pipe metrics, retries, enrichment, target-specific parameters, pricing, and asynchronous delivery semantics that local labs may not fully model.

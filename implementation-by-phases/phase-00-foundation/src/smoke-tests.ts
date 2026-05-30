@@ -17,14 +17,26 @@ export interface SmokeResult {
   ms: number;
 }
 
+/**
+ * Runs Phase 00 health checks in parallel against Floci/local AWS services.
+ * Example: call from CI before running higher-phase integration tests.
+ */
 export async function runFlociSmokeTests(): Promise<SmokeResult[]> {
   return Promise.all([checkHealth(), checkS3(), checkSqs(), checkDynamoDb()]);
 }
 
+/**
+ * Converts detailed check results into one deployment gate boolean.
+ * Example: fail a pipeline when any required local service cannot create/list/delete resources.
+ */
 export function allPassed(results: SmokeResult[]): boolean {
   return results.every((result) => result.status === "pass");
 }
 
+/**
+ * Renders smoke-test output as a compact operator status board.
+ * Example: print green/red rows in local labs, onboarding docs, and CI logs.
+ */
 export function renderStatusBoard(results: SmokeResult[]): string {
   const width = Math.max(...results.map((result) => result.name.length), "service".length);
   const lines = ["service".padEnd(width) + " | status | detail"];

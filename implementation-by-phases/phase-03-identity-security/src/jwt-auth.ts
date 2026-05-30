@@ -33,6 +33,11 @@ export interface AuthContext {
   claims: CognitoClaims;
 }
 
+/**
+ * Decodes JWT header, claims, signing input, and signature without trusting content yet.
+ *
+ * Example: middleware first calls this to inspect `kid`, then loads matching Cognito JWK for signature verification.
+ */
 export function decodeJwt(token: string): { header: JwtHeader; claims: CognitoClaims; signingInput: string; signature: Buffer } {
   const [encodedHeader, encodedClaims, encodedSignature] = token.split(".");
   if (!encodedHeader || !encodedClaims || !encodedSignature) throw new Error("JWT must have header, claims, signature");
@@ -44,6 +49,11 @@ export function decodeJwt(token: string): { header: JwtHeader; claims: CognitoCl
   };
 }
 
+/**
+ * Verifies Cognito issuer, audience/client_id, expiry, token_use, and tenant claim.
+ *
+ * Example: API Gateway Lambda authorizer rejects expired access tokens or tokens missing `custom:tenant_id` before app code runs.
+ */
 export function verifyCognitoClaims(claims: CognitoClaims, options: JwtVerificationOptions): AuthContext {
   const now = options.nowSeconds ?? Math.floor(Date.now() / 1000);
   const audience = claims.aud ?? claims.client_id;
@@ -56,6 +66,11 @@ export function verifyCognitoClaims(claims: CognitoClaims, options: JwtVerificat
   return { subject: claims.sub, tenantId, email: claims.email, claims };
 }
 
+/**
+ * Verifies RS256 JWT signature with provided Cognito public key PEM.
+ *
+ * Example: after resolving JWK by `kid`, authorizer calls this so forged or tampered tokens fail before claim validation.
+ */
 export function verifyJwtSignature(token: string, publicKeyPem: string): CognitoClaims {
   const decoded = decodeJwt(token);
   if (decoded.header.alg !== "RS256") throw new Error(`Unsupported JWT alg: ${decoded.header.alg}`);
@@ -64,6 +79,22 @@ export function verifyJwtSignature(token: string, publicKeyPem: string): Cognito
   return decoded.claims;
 }
 
+/**
+ * Converts validated claims into compact authorization context for handlers.
+ *
+ * Example: route handlers receive `{ subject, tenantId, email }` and never parse raw JWT payloads directly.
+ */
+export function authContextFromClaims(claims: CognitoClaims): AuthContext {
+  const tenantId = claims["custom:tenant_id"];
+  if (!tenantId || typeof tenantId !== "string") throw new Error("JWT tenant claim missing");
+  return { subject: claims.sub, tenantId, email: claims.email, claims };
+}
+
+/**
+ * Encodes value using base64url for JWT tests and local demos.
+ *
+ * Example: test suite builds signed Cognito-like token without network access.
+ */
 export function base64UrlEncode(value: Buffer | string): string {
   return Buffer.from(value).toString("base64url");
 }

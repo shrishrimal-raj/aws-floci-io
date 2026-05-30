@@ -1,6 +1,6 @@
 # 012 - KMS
 
-> Encryption keys, aliases, string encrypt/decrypt helpers, data keys, envelope encryption primitives, metadata reads, and scheduled deletion.
+KMS hands-on module for symmetric keys, aliases, encrypt/decrypt, data keys, envelope encryption, audit-friendly security patterns, lifecycle planning, cost, DR, and compliance.
 
 ## Quick start
 
@@ -14,61 +14,52 @@ pnpm test
 pnpm cleanup
 ```
 
-## Module
+## Key files
 
-- `src/client.ts` - KMS SDK v3 client for Floci (`http://localhost:4566`).
-- `src/use-cases/crypto.ts` - key/alias creation, describe, encrypt/decrypt strings, data keys, envelope key helper, scheduled deletion.
-- `src/examples/encrypt-decrypt.ts` - create key, encrypt string, decrypt string, cleanup.
-- `src/examples/key-alias.ts` - create key and alias bundle.
-- `src/examples/data-key.ts` - generate envelope data key metadata.
-- `scripts/setup.ts` - creates lab key/alias.
-- `scripts/seed.ts` - encrypts fixture data.
-- `scripts/cleanup.ts` - schedules lab key deletion.
+- `src/client.ts` - AWS SDK v3 KMS client for Floci (`http://localhost:4566`).
+- `src/use-cases/crypto.ts` - create keys/aliases, describe keys, encrypt/decrypt strings, generate data keys, schedule deletion.
+- `src/use-cases/enterprise.ts` - encryption context, audit events, retry/backoff, key policy, lifecycle events, cost estimate, compliance checks, DR runbook.
+- `src/examples/` - practical enterprise scenarios.
+- `scripts/` - setup, seed, cleanup lab commands.
 
 ## Operations covered
 
-| Operation | Function | Notes |
+| Operation | Function | Why it matters |
 |---|---|---|
-| Create key | `createKey` | Symmetric `ENCRYPT_DECRYPT` key. |
-| Create alias | `createAlias` | Accepts names with or without `alias/` prefix. |
-| Key + alias bundle | `createKeyWithAlias` | Creates key then stable alias. |
-| Describe key | `describeKey` | Reads metadata and key state. |
-| Encrypt string | `encryptString` | UTF-8 plaintext → ciphertext bytes. |
-| Decrypt string | `decryptString` | Ciphertext bytes → UTF-8 plaintext. |
-| Generate data key | `generateDataKey` | KMS plaintext + encrypted data key response. |
-| Envelope data key | `generateEnvelopeDataKey` | Requires plaintext and encrypted key bytes. |
-| Schedule deletion | `scheduleKeyDeletion` | 7-day pending deletion; idempotent for missing keys. |
+| Create key | `createKey` | Create symmetric `ENCRYPT_DECRYPT` key. |
+| Create alias | `createAlias` | Use stable app config names instead of raw key IDs. |
+| Key + alias | `createKeyWithAlias` | Provision key and alias together. |
+| Describe key | `describeKey` | Check metadata and state. |
+| Encrypt string | `encryptString` | Protect small secrets or test payloads. Supports encryption context. |
+| Decrypt string | `decryptString` | Decrypt bytes back to UTF-8 with matching context. |
+| Data key | `generateDataKey` | Envelope encryption for larger data. Supports encryption context. |
+| Envelope key | `generateEnvelopeDataKey` | Require plaintext and encrypted data key bytes. |
+| Delete key | `scheduleKeyDeletion` | Safe deletion window; ignores missing keys. |
+| Audit event | `kmsAuditEvent` | Log KMS usage without plaintext. |
+| Retry | `retryKmsOperation` | Handle throttling without retry storms. |
+| Key policy | `applicationKeyPolicy` | Model least-privilege admin/app access. |
+| Compliance | `kmsComplianceFindings` | Gate alias, rotation, context, tags, deletion window. |
+| DR | `kmsDisasterRecoveryRunbook` | Plan encrypted workload recovery. |
 
-## Use cases
+## Enterprise examples
 
-```ts
-import { createKeyWithAlias, encryptString, decryptString, generateEnvelopeDataKey, scheduleKeyDeletion } from "./src/index.js";
-
-const { keyId } = await createKeyWithAlias("alias/app-secrets", "app secrets");
-const ciphertext = await encryptString(keyId, "secret-value");
-console.log(await decryptString(ciphertext));
-console.log(await generateEnvelopeDataKey(keyId, 32));
-await scheduleKeyDeletion(keyId);
+```bash
+pnpm example:tenant-context   # tenant-bound encrypt/decrypt + audit + retry
+pnpm example:envelope-pii     # PII envelope encryption metadata pattern
+pnpm example:compliance       # key policy, cost, lifecycle event, compliance gate
+pnpm example:dr               # encrypted workload disaster-recovery runbook
 ```
 
-## Runbook
+Existing basics:
 
-1. Start Floci: `docker compose up -d`.
-2. Check health: `pnpm run floci:health` from repo root.
-3. Provision key/alias: `pnpm setup`.
-4. Encrypt fixture data: `pnpm seed`.
-5. Run tests: `pnpm test`.
-6. Schedule key deletion: `pnpm cleanup`.
+- `src/examples/encrypt-decrypt.ts` - create key, encrypt, decrypt, cleanup.
+- `src/examples/key-alias.ts` - create key with alias.
+- `src/examples/data-key.ts` - generate data key metadata.
 
-## Gotchas
+## Production notes
 
-- KMS encrypt/decrypt boundaries are bytes, not strings; encode/decode explicitly.
-- Do not log plaintext data keys. Zero/forget plaintext key material after local encryption.
-- Use aliases in app config so key IDs can rotate behind stable names.
-- Key deletion is scheduled, not immediate, on real AWS. Pending window prevents accidental loss.
-- Key policies and IAM both affect access; least-privilege decrypt access is critical.
-- Envelope encryption is for larger payloads; direct KMS encrypt has plaintext size limits.
+Use aliases in app config, not raw key IDs. Always pass encryption context for tenant/workload-bound ciphertext. Do not log plaintext data keys or decrypted secrets. Prefer envelope encryption for large payloads. Enable rotation where supported. Use least-privilege key policies and IAM. Record CloudTrail/audit evidence. Use deletion windows and DR runbooks before scheduling deletion.
 
-## Floci vs Real AWS
+## Floci vs real AWS
 
-Floci support: **partial** for this lab. On real AWS, configure key policies, IAM grants, automatic rotation, CloudTrail audit, multi-region keys where needed, deletion windows, encryption context, and least-privilege decrypt permissions. Real AWS also has request quotas, per-request pricing, eventual key state transitions, grants, imported key material, HSM-backed keys, and service-integrated encryption behavior that local Floci does not fully model.
+Floci support is partial. Real AWS adds full key policies, grants, automatic rotation, multi-region keys, quotas, request pricing, CloudTrail, service-integrated encryption, imported key material, HSM-backed keys, and eventual key-state transitions.

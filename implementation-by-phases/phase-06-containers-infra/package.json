@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "platform:demo": "tsx major-projects/microservices-platform-on-ecs/src/demo.ts"
+    "platform:demo": "tsx major-projects/microservices-platform-on-ecs/src/demo.ts",
+    "platform:enterprise-demo": "tsx major-projects/microservices-platform-on-ecs/src/enterprise-demo.ts"
   },
   "dependencies": {
     "@aws-sdk/client-application-auto-scaling": "^3.700.0",

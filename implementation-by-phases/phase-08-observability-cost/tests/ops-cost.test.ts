@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backupCompliance, forecastMonthlyCost, groupCostByTag, toEmbeddedMetricFormat, validateRequiredTags } from "../src/index.js";
+import { backupCompliance, budgetVariancePercent, costOptimizationRecommendation, disasterRecoveryPosture, forecastMonthlyCost, groupCostByTag, tagDriftReport, toEmbeddedMetricFormat, validateRequiredTags } from "../src/index.js";
 
 describe("Phase 08 observability and cost helpers", () => {
   it("emits CloudWatch embedded metric format", () => {
@@ -24,5 +24,12 @@ describe("Phase 08 observability and cost helpers", () => {
   it("forecasts monthly cost and backup compliance", () => {
     expect(forecastMonthlyCost([10, 20], 30)).toBe(450);
     expect(backupCompliance([{ arn: "a", protected: true }, { arn: "b", protected: false }])).toEqual({ protected: 1, unprotected: ["b"] });
+    expect(disasterRecoveryPosture([{ arn: "a", protected: true, criticality: "high" }, { arn: "b", protected: false, criticality: "high" }])).toEqual({ criticalUnprotected: ["b"], coveragePercent: 50 });
+  });
+
+  it("detects tag drift and cost variance recommendations", () => {
+    expect(tagDriftReport([{ arn: "a", tags: { Environment: "prod", Owner: "ops", CostCenter: "1", Project: "x" } }], [{ arn: "a", tags: { Environment: "prod", Owner: "ops", CostCenter: "2", Project: "x" } }])).toEqual([{ arn: "a", driftedTags: ["CostCenter"] }]);
+    expect(budgetVariancePercent(120, 100)).toBe(20);
+    expect(costOptimizationRecommendation({ forecastUsd: 120, budgetUsd: 100, untaggedCostUsd: 0 })).toContain("over budget");
   });
 });

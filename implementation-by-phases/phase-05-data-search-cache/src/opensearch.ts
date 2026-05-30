@@ -7,6 +7,10 @@ export interface ProductDocument {
   vector?: number[];
 }
 
+/**
+ * Defines OpenSearch product index mapping for text relevance plus vector search.
+ * Example: retail search ranks product name higher, supports typo tolerance, and stores embeddings.
+ */
 export function productIndexMapping(): Record<string, unknown> {
   return {
     settings: {
@@ -30,6 +34,10 @@ export function productIndexMapping(): Record<string, unknown> {
   };
 }
 
+/**
+ * Builds tenant-filtered product search query with fuzzy multi-field matching.
+ * Example: tenant-a search for `wintre boot` matches `Winter Boot` but never tenant-b documents.
+ */
 export function productSearchQuery(tenantId: string, text: string): Record<string, unknown> {
   return {
     query: {
@@ -49,6 +57,10 @@ export function productSearchQuery(tenantId: string, text: string): Record<strin
   };
 }
 
+/**
+ * Thin HTTP wrapper for OpenSearch index lifecycle, document writes, and searches.
+ * Example: product service creates index during deploy, indexes product changes, then queries by tenant.
+ */
 export class ProductSearchIndex {
   constructor(private readonly endpoint = process.env.OPENSEARCH_ENDPOINT ?? "http://localhost:9200", private readonly index = "products") {}
 

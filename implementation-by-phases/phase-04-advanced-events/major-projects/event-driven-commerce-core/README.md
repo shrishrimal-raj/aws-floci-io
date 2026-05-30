@@ -1,19 +1,21 @@
 # Event-Driven Commerce Core
 
-Commerce backend where every state change emits domain event.
+Hands-on enterprise commerce backend where every state change emits auditable domain event.
 
-## Capabilities
+## Scenarios
 
-- EventBridge custom bus for commerce events.
-- Checkout saga orchestrated by Step Functions.
-- Kinesis clickstream with tenant/session partition keys.
-- Firehose sink for raw event lake in S3.
-- DynamoDB Streams mapper for CDC fanout.
-- Scheduler for recurring reports/jobs.
-- Pipes plan for SQS → Step Functions without glue Lambda.
+1. **Marketplace order lifecycle** - EventBridge choreography for fulfillment, notification, billing, analytics.
+2. **Checkout saga** - Step Functions retries and compensates inventory/payment failures.
+3. **Streaming analytics** - Kinesis clickstream, Firehose S3 event lake, hot-shard/capacity planning.
+4. **Regulated fintech controls** - tenant-scoped access, audit logs, retry policy, compliance tags, lifecycle, DR.
 
-## Demo
+## Run
 
 ```bash
 pnpm --filter @floci-lab/phase-04 commerce:demo
+pnpm --filter @floci-lab/phase-04 commerce:enterprise
+pnpm --filter @floci-lab/phase-04 commerce:fintech
+pnpm --filter @floci-lab/phase-04 commerce:analytics
 ```
+
+Read main `../../README.md` for function map and production checklist.

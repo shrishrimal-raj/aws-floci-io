@@ -16,6 +16,10 @@ export interface ProductRow {
   updated_at: string;
 }
 
+/**
+ * Returns tenant-partitioned Postgres schema for operational products.
+ * Example: SaaS catalog service keeps each product row scoped by `(tenant_id, product_id)`.
+ */
 export function productSchemaSql(): string {
   return `
 CREATE TABLE IF NOT EXISTS products (
@@ -31,15 +35,27 @@ CREATE INDEX IF NOT EXISTS products_tenant_updated_idx ON products (tenant_id, u
 `;
 }
 
+/**
+ * Builds tenant-prefixed Redis/ElastiCache keys to prevent cross-tenant reads.
+ * Example: `tenant:tenant-a:product:p1` stores only tenant-a product p1.
+ */
 export function tenantCacheKey(tenantId: string, namespace: string, id: string): string {
   return `tenant:${tenantId}:${namespace}:${id}`;
 }
 
+/**
+ * Adds random TTL spread to avoid cache stampedes at exact expiry boundaries.
+ * Example: base 300s with 10% jitter produces 300-330s TTLs across hot products.
+ */
 export function jitterTtl(baseSeconds: number, jitterRatio = 0.1, random = Math.random): number {
   const jitter = Math.round(baseSeconds * jitterRatio * random());
   return baseSeconds + jitter;
 }
 
+/**
+ * Coalesces concurrent misses for the same cache key into one backend call.
+ * Example: 100 simultaneous product requests trigger one Postgres query, not 100.
+ */
 export class SingleFlight {
   private readonly inflight = new Map<string, Promise<unknown>>();
 
@@ -52,6 +68,10 @@ export class SingleFlight {
   }
 }
 
+/**
+ * Minimal tenant-safe product repository backed by SQL parameter binding.
+ * Example: API handler fetches one product without string-concatenating SQL input.
+ */
 export class ProductRepository {
   constructor(private readonly db: QueryRunner<ProductRow>) {}
 
@@ -64,6 +84,10 @@ export class ProductRepository {
   }
 }
 
+/**
+ * Read-through repository combining Postgres, Redis-style cache, jitter TTL, and single-flight.
+ * Example: product detail page serves hot catalog reads from ElastiCache with safe DB fallback.
+ */
 export class CachedProductRepository {
   private readonly singleFlight = new SingleFlight();
 

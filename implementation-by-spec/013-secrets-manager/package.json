@@ -8,7 +8,12 @@
     "test:watch": "vitest",
     "setup": "tsx scripts/setup.ts",
     "seed": "tsx scripts/seed.ts",
-    "cleanup": "tsx scripts/cleanup.ts"
+    "cleanup": "tsx scripts/cleanup.ts",
+    "example:secure-db": "tsx src/examples/secure-database-credentials.ts",
+    "example:rotation": "tsx src/examples/audit-rotation-workflow.ts",
+    "example:lifecycle": "tsx src/examples/lifecycle-cost-governance.ts",
+    "example:event-refresh": "tsx src/examples/event-driven-secret-refresh.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.700.0",

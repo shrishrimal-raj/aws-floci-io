@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { zeroTrustUserPoolPlan, CognitoProvisioner } from "../src/cognito.js";
-import { KmsSecretStore, tenantEncryptionContext } from "../src/kms-secret-store.js";
-import { CrossAccountAccess, CertificateManager, auditEvent } from "../src/sts-acm-audit.js";
+import { KmsSecretStore, redactEncryptedSecret, tenantEncryptionContext } from "../src/kms-secret-store.js";
+import { CrossAccountAccess, CertificateManager, auditEvent, redactAssumedRoleSession } from "../src/sts-acm-audit.js";
 
 class FakeClient {
   commands: unknown[] = [];
@@ -26,13 +26,17 @@ describe("Cognito, KMS, STS, ACM helpers", () => {
   it("encrypts JSON with tenant encryption context", async () => {
     const client = new FakeClient([{ CiphertextBlob: Buffer.from("cipher") }]);
     const store = new KmsSecretStore(client as never, "key-1");
-    await expect(store.encryptJson({ secret: true }, tenantEncryptionContext("tenant-a", "api-key"))).resolves.toMatchObject({ keyId: "key-1" });
+    const encrypted = await store.encryptJson({ secret: true }, tenantEncryptionContext("tenant-a", "api-key"));
+    expect(encrypted).toMatchObject({ keyId: "key-1" });
+    expect(redactEncryptedSecret(encrypted)).toMatchObject({ ciphertext: "[REDACTED]" });
     expect(client.commands[0]?.constructor.name).toBe("EncryptCommand");
   });
 
   it("assumes cross-account role with external id", async () => {
     const client = new FakeClient([{ Credentials: { AccessKeyId: "a", SecretAccessKey: "s", SessionToken: "t" } }]);
-    await expect(new CrossAccountAccess(client as never).assumeTenantRole("arn:aws:iam::111:role/x", "tenant-a", "ext-1")).resolves.toMatchObject({ accessKeyId: "a" });
+    const session = await new CrossAccountAccess(client as never).assumeTenantRole("arn:aws:iam::111:role/x", "tenant-a", "ext-1");
+    expect(session).toMatchObject({ accessKeyId: "a" });
+    expect(redactAssumedRoleSession(session)).toMatchObject({ accessKeyId: "[REDACTED]" });
     expect(client.commands[0]?.constructor.name).toBe("AssumeRoleCommand");
   });
 

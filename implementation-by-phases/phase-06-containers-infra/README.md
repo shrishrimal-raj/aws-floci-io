@@ -1,17 +1,27 @@
 # Phase 06 - Containers & Infrastructure implementation
 
-Container platform primitives for ECS/EKS/CloudFormation/Route53.
+Enterprise container platform building blocks for ECS, ECR, EKS, CloudFormation, ALB, Route53, autoscaling, and operations.
 
-## Included
+## What you learn
 
-- AWS client factory for ECR, ECS, EC2, EKS, CloudFormation, ELBv2, Application Auto Scaling, Route53.
-- ECR image URI and Docker build/login/push command helpers.
-- ECS Fargate task definition and service input builders.
-- Four-service platform model: auth, catalog, orders, payments.
-- ALB target group helpers and Route53 weighted blue/green records.
-- CloudFormation VPC/subnet template plus change set/drift helpers.
-- EKS IRSA trust policy and Kubernetes service account/deployment manifests.
-- ECS target-tracking autoscaling helper.
+- Build and push secure ECR images with scan-on-push and lifecycle cleanup.
+- Run ECS Fargate services in private subnets behind ALB target groups.
+- Use Route53 weighted records for blue/green and canary releases.
+- Manage VPC infrastructure with CloudFormation change sets and drift checks.
+- Use EKS IRSA instead of static AWS keys in pods.
+- Add retries, audit events, deployment events, dashboards, cost estimates, DR runbooks, and compliance gates.
+
+## Key files
+
+- `src/container-image.ts` - ECR image URI, Docker commands, repository helper.
+- `src/ecs-platform.ts` - service model, task definitions, ECS service input, Fargate wrapper.
+- `src/load-balancing.ts` - ALB target groups and Route53 blue/green records.
+- `src/cloudformation.ts` - VPC template, template validation, change sets, drift detection.
+- `src/eks-irsa.ts` - IRSA trust policy and Kubernetes manifests.
+- `src/autoscaling.ts` - ECS target tracking autoscaling.
+- `src/enterprise-patterns.ts` - audit logging, retries, EventBridge-style events, lifecycle, observability, cost, DR, compliance.
+- `src/examples/` - separate real-world scenarios for ECS, EKS, and operations.
+- `major-projects/microservices-platform-on-ecs/` - integrated hands-on platform demo.
 
 ## Run
 
@@ -19,8 +29,15 @@ Container platform primitives for ECS/EKS/CloudFormation/Route53.
 pnpm install
 pnpm --filter @floci-lab/phase-06 test
 pnpm --filter @floci-lab/phase-06 platform:demo
+pnpm --filter @floci-lab/phase-06 platform:enterprise-demo
 ```
+
+## Example scenarios
+
+1. **Secure ECS orders service** - image build, private service networking, blue/green Route53, audit record, compliance evidence, cost estimate.
+2. **Event-driven operations** - retry transient throttling, emit deployment event, build CloudWatch dashboard body, prepare DR runbook.
+3. **EKS IRSA compliance** - trust policy, service account, deployment manifest, audit record, compliance gate.
 
 ## Production notes
 
-Use ALB for HTTP/gRPC and NLB for raw TCP/UDP. Keep task health check ports aligned with container ports. Use private subnets for tasks, public subnets for ALB. Prefer IRSA over static AWS keys in pods. Use CloudFormation change sets before stack updates and drift detection after manual recovery.
+Keep tasks in private subnets and ALBs in public subnets. Use scan-on-push, image lifecycle cleanup, least-privilege task roles, CloudWatch logs, and explicit health checks. Review CloudFormation change sets before updates and run drift detection after manual recovery. Use weighted Route53 records for safe rollout and documented rollback. Tag services with `CostCenter` and `Owner` for allocation and compliance evidence.

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "test:watch": "vitest",
     "setup": "tsx scripts/setup.ts",
     "seed": "tsx scripts/seed.ts",

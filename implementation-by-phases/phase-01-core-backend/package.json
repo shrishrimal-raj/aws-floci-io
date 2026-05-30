@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "taskflow:demo": "tsx major-projects/taskflow-api/src/demo.ts"
+    "taskflow:demo": "tsx major-projects/taskflow-api/src/demo.ts",
+    "taskflow:enterprise": "tsx major-projects/taskflow-api/src/scenarios/enterprise-saas-workflow.ts"
   },
   "dependencies": {
     "@aws-sdk/client-api-gateway": "^3.700.0",

@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "webhook:demo": "tsx major-projects/reliable-webhook-hub/src/demo.ts"
+    "webhook:demo": "tsx major-projects/reliable-webhook-hub/src/demo.ts",
+    "webhook:enterprise": "tsx major-projects/reliable-webhook-hub/src/scenarios/enterprise-webhook-platform.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.700.0",

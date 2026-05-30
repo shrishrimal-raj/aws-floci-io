@@ -10,6 +10,7 @@ export interface ServiceDefinition {
   environment?: Record<string, string>;
 }
 
+/** Baseline enterprise microservices used across examples: auth, catalog, orders, payments. */
 export const platformServices: ServiceDefinition[] = [
   { name: "auth", image: "auth:latest", port: 3000, cpu: 256, memory: 512, desiredCount: 2 },
   { name: "catalog", image: "catalog:latest", port: 3001, cpu: 256, memory: 512, desiredCount: 2 },
@@ -17,6 +18,7 @@ export const platformServices: ServiceDefinition[] = [
   { name: "payments", image: "payments:latest", port: 3003, cpu: 512, memory: 1024, desiredCount: 2 },
 ];
 
+/** Builds a secure Fargate task definition with health checks and CloudWatch logs. */
 export function taskDefinitionInput(service: ServiceDefinition, executionRoleArn: string, taskRoleArn: string): RegisterTaskDefinitionCommandInput {
   return {
     family: service.name,
@@ -40,6 +42,7 @@ export function taskDefinitionInput(service: ServiceDefinition, executionRoleArn
   };
 }
 
+/** Builds ECS service input for private-subnet Fargate tasks behind a target group. */
 export function ecsServiceInput(service: ServiceDefinition, clusterArn: string, taskDefinitionArn: string, targetGroupArn: string, subnets: string[], securityGroups: string[]) {
   return {
     serviceName: service.name,
@@ -54,14 +57,17 @@ export function ecsServiceInput(service: ServiceDefinition, clusterArn: string, 
   };
 }
 
+/** ECS Fargate wrapper for registering task definitions and creating services. */
 export class EcsFargateService {
   constructor(private readonly ecs: ECSClient) {}
 
+  /** Registers one deployable task definition revision for a service. */
   async registerTask(service: ServiceDefinition, executionRoleArn: string, taskRoleArn: string): Promise<string | undefined> {
     const result = await this.ecs.send(new RegisterTaskDefinitionCommand(taskDefinitionInput(service, executionRoleArn, taskRoleArn)));
     return result.taskDefinition?.taskDefinitionArn;
   }
 
+  /** Creates the ECS service bound to ALB/NLB target group and private networking. */
   async create(service: ServiceDefinition, clusterArn: string, taskDefinitionArn: string, targetGroupArn: string, subnets: string[], securityGroups: string[]): Promise<string | undefined> {
     const result = await this.ecs.send(new CreateServiceCommand(ecsServiceInput(service, clusterArn, taskDefinitionArn, targetGroupArn, subnets, securityGroups)));
     return result.service?.serviceArn;

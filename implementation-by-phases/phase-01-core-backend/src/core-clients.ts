@@ -23,6 +23,11 @@ export interface CoreClients {
   cloudWatchLogs: CloudWatchLogsClient;
 }
 
+/**
+ * Creates AWS SDK clients for Phase 01 services using Floci/LocalStack-friendly defaults.
+ *
+ * Example: tests and demos pass `{ endpoint: "http://localhost:4566" }`; production code can omit endpoint and rely on AWS env/role config.
+ */
 export function createCoreClients(options: AwsClientOptions = {}): CoreClients {
   const endpoint = options.endpoint ?? process.env.AWS_ENDPOINT_URL ?? "http://localhost:4566";
   const defaults = awsDefaults({ endpoint, ...options });

@@ -9,6 +9,10 @@ export interface DailyScheduleInput {
   payload: unknown;
 }
 
+/**
+ * Creates daily EventBridge Scheduler job.
+ * Example: run nightly tenant billing report or data-retention sweep without cron servers.
+ */
 export class CommerceScheduler {
   constructor(private readonly scheduler: SchedulerClient) {}
 
@@ -32,6 +36,10 @@ export interface PipePlan {
   filterPattern?: Record<string, unknown>;
 }
 
+/**
+ * Plans SQS to Step Functions EventBridge Pipe for checkout workloads.
+ * Example: queue absorbs spikes, pipe filters `CheckoutStarted`, Step Functions orchestrates saga.
+ */
 export function sqsToStepFunctionsPipePlan(name: string, sourceArn: string, targetArn: string, roleArn: string): PipePlan {
   return {
     name,
@@ -42,6 +50,10 @@ export function sqsToStepFunctionsPipePlan(name: string, sourceArn: string, targ
   };
 }
 
+/**
+ * Provisions EventBridge Pipe from planned source, target, role, and optional filter.
+ * Example: replace glue Lambda with managed pipe for SQS-to-workflow handoff.
+ */
 export class CommercePipeProvisioner {
   constructor(private readonly pipes: PipesClient) {}
 

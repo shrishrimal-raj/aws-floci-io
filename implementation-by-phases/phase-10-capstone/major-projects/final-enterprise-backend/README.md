@@ -1,5 +1,19 @@
 # Final Enterprise Backend
 
-Pick 3–5 capstones and build them to production grade. The final one integrates 20+ services across compute, data, events, security, and observability.
+Production-grade capstone showing how to combine all phases into one multi-tenant SaaS backend.
 
-See `spec-by-phases/phase-10-capstone/README.md` for the full spec.
+## Scenarios
+
+- **Tenant SaaS onboarding** - tenant RBAC, audit record, EventBridge provisioning routes, retry policy.
+- **Regulated data operations** - lifecycle retention, SOC2 controls, observability, backup evidence, warm-standby DR.
+- **Incident response workflow** - audit trail, ops event route, alarm checklist, rollback and DLQ replay steps.
+
+## Run
+
+```bash
+pnpm --filter @floci-lab/phase-10 lab
+```
+
+## Learn
+
+Start in `src/demo.ts`, then inspect each scenario file. Every example uses pure TypeScript planning helpers, so patterns are easy to test before wiring real AWS SDK clients.

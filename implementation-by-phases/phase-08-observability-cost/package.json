@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lab": "tsx major-projects/ops-cost-command-center/src/demo.ts"
+    "lab": "tsx major-projects/ops-cost-command-center/src/demo.ts",
+    "lab:enterprise": "tsx major-projects/ops-cost-command-center/src/scenarios/enterprise-ops-command-center.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

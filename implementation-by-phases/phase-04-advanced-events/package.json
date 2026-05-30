@@ -6,7 +6,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "commerce:demo": "tsx major-projects/event-driven-commerce-core/src/demo.ts"
+    "commerce:demo": "tsx major-projects/event-driven-commerce-core/src/demo.ts",
+    "commerce:enterprise": "tsx major-projects/event-driven-commerce-core/src/enterprise-commerce-demo.ts",
+    "commerce:fintech": "tsx major-projects/event-driven-commerce-core/src/regulated-fintech-demo.ts",
+    "commerce:analytics": "tsx major-projects/event-driven-commerce-core/src/streaming-analytics-demo.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb-streams": "^3.700.0",

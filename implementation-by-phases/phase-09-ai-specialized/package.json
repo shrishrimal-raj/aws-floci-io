@@ -6,7 +6,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lab": "tsx major-projects/ai-document-intelligence-backend/src/demo.ts"
+    "lab": "tsx major-projects/ai-document-intelligence-backend/src/demo.ts",
+    "lab:enterprise": "tsx major-projects/ai-document-intelligence-backend/src/enterprise-demo.ts",
+    "lab:compliance": "tsx major-projects/ai-document-intelligence-backend/src/compliance-demo.ts",
+    "lab:operations": "tsx major-projects/ai-document-intelligence-backend/src/operations-demo.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

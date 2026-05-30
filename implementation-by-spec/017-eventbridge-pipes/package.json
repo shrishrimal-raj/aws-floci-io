@@ -8,7 +8,11 @@
     "test:watch": "vitest",
     "setup": "tsx scripts/setup.ts",
     "seed": "tsx scripts/seed.ts",
-    "cleanup": "tsx scripts/cleanup.ts"
+    "cleanup": "tsx scripts/cleanup.ts",
+    "typecheck": "tsc --noEmit",
+    "example:filter": "tsx src/examples/filter-pattern.ts",
+    "example:lifecycle": "tsx src/examples/lifecycle.ts",
+    "example:enterprise": "tsx src/examples/enterprise-order-routing.ts"
   },
   "dependencies": {
     "@aws-sdk/client-pipes": "^3.700.0",

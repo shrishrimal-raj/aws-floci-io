@@ -26,9 +26,7 @@ function wrapError(operation: string, error: unknown): never {
 
 /**
  * Put String or SecureString parameter with overwrite enabled.
- *
- * @example
- * await putStringParameter("/app/dev/db/url", "postgres://localhost");
+ * Practical example: CI/CD pipeline stores `/orders/prod/db-url` as SecureString before deployment.
  */
 export async function putStringParameter(name: string, value: string, secure = false, ssm: SSMClient = defaultClient): Promise<void> {
   try {
@@ -40,9 +38,7 @@ export async function putStringParameter(name: string, value: string, secure = f
 
 /**
  * Get parameter value as string with optional decryption.
- *
- * @example
- * const value = await getStringParameter("/app/dev/db/url");
+ * Practical example: Lambda cold start reads `/orders/prod/api-timeout-ms` and SecureString DB URL.
  */
 export async function getStringParameter(name: string, decrypt = true, ssm: SSMClient = defaultClient): Promise<string | undefined> {
   try {
@@ -54,9 +50,7 @@ export async function getStringParameter(name: string, decrypt = true, ssm: SSMC
 
 /**
  * Put JSON parameter, optionally as SecureString.
- *
- * @example
- * await putJsonParameter("/app/dev/features", { beta: true });
+ * Practical example: platform team stores feature flags as `/orders/prod/features` JSON.
  */
 export async function putJsonParameter(name: string, value: unknown, secure = false, ssm: SSMClient = defaultClient): Promise<void> {
   return putStringParameter(name, JSON.stringify(value), secure, ssm);
@@ -64,9 +58,7 @@ export async function putJsonParameter(name: string, value: unknown, secure = fa
 
 /**
  * Get JSON parameter and parse typed value.
- *
- * @example
- * const cfg = await getJsonParameter<{ beta: boolean }>("/app/dev/features");
+ * Practical example: API service loads typed feature flags and rollout settings from Parameter Store.
  */
 export async function getJsonParameter<TValue = unknown>(name: string, ssm: SSMClient = defaultClient): Promise<TValue> {
   const value = await getStringParameter(name, true, ssm);
@@ -76,9 +68,7 @@ export async function getJsonParameter<TValue = unknown>(name: string, ssm: SSMC
 
 /**
  * Get parameters under path, with recursive traversal by default.
- *
- * @example
- * const params = await getParametersByPath("/app/dev");
+ * Practical example: ECS task reads all `/orders/prod/*` config in one startup call.
  */
 export async function getParametersByPath(path: string, recursive = true, ssm: SSMClient = defaultClient): Promise<Parameter[]> {
   try {
@@ -90,9 +80,7 @@ export async function getParametersByPath(path: string, recursive = true, ssm: S
 
 /**
  * Load path parameters into key/value object using final path segment as key.
- *
- * @example
- * const config = await loadConfigByPath("/app/dev");
+ * Practical example: convert `/orders/prod/db-url` and `/orders/prod/api-timeout-ms` into runtime config.
  */
 export async function loadConfigByPath(path: string, ssm: SSMClient = defaultClient): Promise<Record<string, string>> {
   const params = await getParametersByPath(path, true, ssm);
@@ -103,9 +91,7 @@ export async function loadConfigByPath(path: string, ssm: SSMClient = defaultCli
 
 /**
  * Delete one parameter; undefined or missing names are ignored.
- *
- * @example
- * await deleteParameter("/app/dev/db/url");
+ * Practical example: integration tests clean up generated parameters safely after each run.
  */
 export async function deleteParameter(name: string | undefined, ssm: SSMClient = defaultClient): Promise<void> {
   if (!name) return;
@@ -119,9 +105,7 @@ export async function deleteParameter(name: string | undefined, ssm: SSMClient =
 
 /**
  * Build hierarchical app/env/key parameter path.
- *
- * @example
- * const path = parameterPath("app", "dev", "db/url");
+ * Practical example: standardize names like `/orders/prod/payments/provider-token` across teams.
  */
 export function parameterPath(app: string, env: string, key: string): string {
   return `/${app}/${env}/${key}`;
@@ -129,9 +113,7 @@ export function parameterPath(app: string, env: string, key: string): string {
 
 /**
  * Build typed app config holder.
- *
- * @example
- * const cfg = appConfig("/app/dev/features", { beta: true });
+ * Practical example: define config seed manifests in code before writing them to SSM.
  */
 export function appConfig<TValue>(path: string, value: TValue): AppConfig<TValue> {
   return { path, value };

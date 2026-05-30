@@ -8,13 +8,16 @@ export interface ScalingPlan {
   targetCpuPercent: number;
 }
 
+/** Builds ECS Application Auto Scaling resource ID for one service. */
 export function ecsResourceId(clusterName: string, serviceName: string): string {
   return `service/${clusterName}/${serviceName}`;
 }
 
+/** ECS autoscaling helper for target tracking desired-count policies. */
 export class EcsAutoScaler {
   constructor(private readonly autoScaling: ApplicationAutoScalingClient) {}
 
+  /** Registers min/max desired task count for an ECS service. */
   async register(plan: ScalingPlan): Promise<void> {
     await this.autoScaling.send(
       new RegisterScalableTargetCommand({
@@ -27,6 +30,7 @@ export class EcsAutoScaler {
     );
   }
 
+  /** Adds CPU target-tracking policy with practical cooldowns. */
   async putCpuPolicy(plan: ScalingPlan): Promise<void> {
     await this.autoScaling.send(
       new PutScalingPolicyCommand({

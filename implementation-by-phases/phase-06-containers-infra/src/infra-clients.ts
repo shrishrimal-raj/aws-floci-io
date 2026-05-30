@@ -19,6 +19,7 @@ export interface InfraClients {
   route53: Route53Client;
 }
 
+/** Creates all AWS SDK clients needed by container and infrastructure examples. */
 export function createInfraClients(options: AwsClientOptions = {}): InfraClients {
   const endpoint = options.endpoint ?? process.env.AWS_ENDPOINT_URL ?? "http://localhost:4566";
   const defaults = awsDefaults({ endpoint, ...options });

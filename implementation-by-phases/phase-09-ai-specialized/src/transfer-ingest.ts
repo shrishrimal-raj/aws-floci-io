@@ -12,6 +12,10 @@ export interface IngestedDocumentEvent {
   contentType: string;
 }
 
+/**
+ * Creates tenant-scoped AWS Transfer Family user mapping.
+ * Example: partner `claims-dropbox` lands files only under `/tenants/hospital-a/incoming`.
+ */
 export function createTransferUserMapping(tenantId: string, username: string, bucket: string, roleArn: string): TransferUserMapping {
   const prefix = `/tenants/${tenantId}/incoming`;
   return {
@@ -22,6 +26,10 @@ export function createTransferUserMapping(tenantId: string, username: string, bu
   };
 }
 
+/**
+ * Parses tenant and content type from incoming S3 object key.
+ * Example: `tenants/acme/incoming/invoice.pdf` becomes SFTP PDF ingest event for downstream routing.
+ */
 export function parseIncomingDocumentKey(key: string): IngestedDocumentEvent {
   const match = /^tenants\/([^/]+)\/incoming\/(.+)$/.exec(key);
   if (!match) throw new Error(`Invalid incoming document key: ${key}`);
@@ -34,6 +42,10 @@ export function parseIncomingDocumentKey(key: string): IngestedDocumentEvent {
   };
 }
 
+/**
+ * Decides whether document should start Textract flow.
+ * Example: PDFs in incoming prefix start OCR; CSV/TXT files route to alternate parser or quarantine.
+ */
 export function shouldStartTextract(event: IngestedDocumentEvent): boolean {
   return event.contentType === "application/pdf" && event.key.includes("/incoming/");
 }

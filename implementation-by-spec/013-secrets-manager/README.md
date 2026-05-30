@@ -1,6 +1,6 @@
 # 013 - Secrets Manager
 
-> Store, read, redact, version, rotate, update, and delete JSON secret values safely.
+Store, read, redact, rotate, audit, and lifecycle-manage JSON secrets safely with AWS SDK v3 and Floci.
 
 ## Quick start
 
@@ -8,66 +8,64 @@
 docker compose up -d
 pnpm install
 cd implementation-by-spec/013-secrets-manager
-pnpm setup
-pnpm seed
+pnpm typecheck
 pnpm test
-pnpm cleanup
+pnpm setup && pnpm seed && pnpm cleanup
 ```
 
-## Module
+## What you learn
 
-- `src/client.ts` - Secrets Manager SDK v3 client for Floci (`http://localhost:4566`).
-- `src/use-cases/secrets.ts` - JSON secret create/read/update/version/rotate/delete plus safe redaction helpers.
-- `src/examples/basic-secret.ts` - create/read/update/delete JSON secret.
-- `src/examples/rotate-secret.ts` - rotate a JSON secret and log redacted previous value.
-- `src/examples/redact-secret.ts` - redact secret values and build typed version metadata.
-- `scripts/setup.ts` - creates lab secret.
-- `scripts/seed.ts` - writes fixture secret value.
-- `scripts/cleanup.ts` - force-deletes lab secret.
+- **JSON secrets**: create, read raw string, parse typed JSON, update, version, rotate, delete.
+- **Secure access**: namespace checks with `assertSecretNameAllowed` for tenant/service isolation.
+- **Safe logging**: top-level and deep redaction helpers for diagnostics and audit logs.
+- **Audit trails**: structured `secretAuditEvent` for read/update/rotate/delete decisions.
+- **Reliability**: `withSecretRetry` for transient throttling/timeouts.
+- **Lifecycle**: metadata reads, rotation/delete decisions, recovery-window delete.
+- **FinOps**: monthly Secrets Manager cost estimate from secret count and API calls.
+- **Event-driven refresh**: model rotation event handling and cache invalidation.
+
+## Key files
+
+- `src/client.ts` - Secrets Manager client for Floci endpoint.
+- `src/use-cases/secrets.ts` - all production-ready helper functions.
+- `src/examples/basic-secret.ts` - create/read/update/delete walkthrough.
+- `src/examples/secure-database-credentials.ts` - tenant namespace, retry, audit pattern.
+- `src/examples/audit-rotation-workflow.ts` - rotation with redacted previous value.
+- `src/examples/lifecycle-cost-governance.ts` - lifecycle + cost forecast without AWS calls.
+- `src/examples/event-driven-secret-refresh.ts` - rotation event/cache refresh pattern.
+- `scripts/setup.ts`, `seed.ts`, `cleanup.ts` - lab resource lifecycle.
 
 ## Operations covered
 
-| Operation | Function | Notes |
-|---|---|---|
-| Create JSON secret | `createJsonSecret` | Stores initial JSON `SecretString`; existing secret returns name for lab idempotency. |
-| Get raw string | `getSecretString` | Reads `SecretString` by name or ARN. |
-| Get JSON secret | `getJsonSecret` | Parses `SecretString` into typed value. |
-| Put new version | `putJsonSecretValue` | Adds new secret version. |
-| Update secret | `updateJsonSecret` | Replaces current JSON secret value. |
-| Rotate JSON secret | `rotateJsonSecret` | Reads previous, writes next, returns redacted previous. |
-| Delete secret | `deleteSecret` | Force delete for lab cleanup; missing secrets ignored. |
-| Redact secret | `redactSecret` | Replaces top-level values with `***REDACTED***`. |
-| Secret version holder | `secretVersion` | Typed name/value/version metadata helper. |
+| Function | Purpose |
+|---|---|
+| `createJsonSecret` | Create JSON secret; existing secret is idempotent for labs. |
+| `getSecretString` / `getJsonSecret` | Read raw or typed secret values. |
+| `putJsonSecretValue` / `updateJsonSecret` | Add version or replace current value. |
+| `rotateJsonSecret` | Read previous, write next, return redacted previous. |
+| `deleteSecret` / `deleteSecretWithRecovery` | Lab force-delete or production recovery-window delete. |
+| `getSecretMetadata` | Read lifecycle metadata. |
+| `redactSecret` / `redactSecretDeep` | Safe logging helpers. |
+| `secretAuditEvent` | Compliance/audit event builder. |
+| `assertSecretNameAllowed` | Prefix-based secure access guard. |
+| `withSecretRetry` | Retry transient failures. |
+| `secretLifecycleDecision` | Rotate/delete decision helper. |
+| `estimateSecretsManagerMonthlyCost` | Simple FinOps estimate. |
 
-## Use cases
+## Example commands
 
-```ts
-import { createJsonSecret, getJsonSecret, rotateJsonSecret, deleteSecret } from "./src/index.js";
-
-await createJsonSecret("db/app", { username: "app", password: "old" });
-console.log(await getJsonSecret<{ username: string; password: string }>("db/app"));
-console.log(await rotateJsonSecret("db/app", { username: "app", password: "new" }));
-await deleteSecret("db/app");
+```bash
+pnpm example:lifecycle
+pnpm example:event-refresh
+# require Floci running:
+pnpm example:secure-db
+pnpm example:rotation
 ```
 
-## Runbook
+## Production notes
 
-1. Start Floci: `docker compose up -d`.
-2. Check health: `pnpm run floci:health` from repo root.
-3. Provision secret: `pnpm setup`.
-4. Write fixture value: `pnpm seed`.
-5. Run tests: `pnpm test`.
-6. Cleanup secret: `pnpm cleanup`.
+Never log raw secret values. Prefer recovery-window delete in production. Use IAM least privilege, KMS customer-managed keys where required, CloudTrail auditing, rotation alarms, and short application caches that honor rotation windows. Validate resource policies before cross-account sharing.
 
-## Gotchas
+## Floci vs real AWS
 
-- Never log raw secret values. Redact before logging or returning diagnostics.
-- Cache secrets briefly in apps to reduce latency/cost, but honor rotation windows.
-- Use KMS customer-managed keys when access separation/audit requirements demand it.
-- Rotation needs app compatibility: support old/new credentials during transition.
-- Force delete is lab-only; production should use recovery windows unless emergency.
-- Resource policies can expose secrets cross-account; audit them carefully.
-
-## Floci vs Real AWS
-
-Floci support: **partial** for this lab. On real AWS, configure KMS keys, rotation Lambda, recovery windows, resource policies, replication, CloudTrail audit, IAM least privilege, and alarms for failed rotations. Real AWS also has version stages (`AWSCURRENT`, `AWSPREVIOUS`), deletion recovery windows, per-secret costs, API request costs, cross-region replication, and rotation workflows that local Floci does not fully model.
+Floci support is partial. Real AWS adds version stages (`AWSCURRENT`, `AWSPREVIOUS`), rotation Lambdas, recovery windows, KMS key policies, CloudTrail events, cross-region replication, resource policies, and per-secret/API-call pricing.

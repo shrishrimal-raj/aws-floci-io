@@ -1,15 +1,41 @@
 #!/usr/bin/env tsx
 import {
-  chooseDeploymentStrategy,
-  createBlueGreenRollbackPolicy,
-  createLambdaCanaryPlan,
-  createNodeBuildSpec,
+  buildOrdersApiDeliveryExample,
+  buildPaymentsComplianceDeliveryExample,
+  buildSaasWorkerDeliveryExample,
+  createCrossAccountPromotionPlan,
+  createSelfServicePipeline,
+  evaluatePipelineGuardrails,
+  nextPipelineAction,
 } from "../../../src/index.js";
 
-const buildspec = createNodeBuildSpec({ appName: "orders-api", artifactFiles: ["dist/**/*", "appspec.yml"] });
-const strategy = chooseDeploymentStrategy("ecs", true);
-const canary = createLambdaCanaryPlan(10, 15);
-const rollback = createBlueGreenRollbackPolicy("orders-api", ["orders-5xx-rate", "orders-latency-p95"]);
+const orders = buildOrdersApiDeliveryExample();
+const payments = buildPaymentsComplianceDeliveryExample();
+const worker = buildSaasWorkerDeliveryExample();
+
+const platformPipeline = createSelfServicePipeline("github.com/acme/orders-api", "orders-api");
+const nextAction = nextPipelineAction(platformPipeline, ["Source", "Build"]);
+const productionGuardrails = evaluatePipelineGuardrails({
+  environment: "prod",
+  approvers: ["platform-owner", "service-owner"],
+  securityScanPassed: true,
+  changeTicket: "CHG-1042",
+  alarmState: "OK",
+});
+const promotion = createCrossAccountPromotionPlan("orders-api", ["dev", "stage", "prod"]);
 
 console.log("Self-Service Deploy Platform demo");
-console.log(JSON.stringify({ strategy, buildspec, canary, rollback }, null, 2));
+console.log(
+  JSON.stringify(
+    {
+      useCases: [orders, payments, worker],
+      platformOperatorView: {
+        nextAction,
+        productionGuardrails,
+        promotion,
+      },
+    },
+    null,
+    2,
+  ),
+);

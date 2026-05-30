@@ -1,6 +1,6 @@
 # 014 - SSM Parameter Store
 
-> Hierarchical application config and lightweight secrets with string parameters, JSON parameters, SecureString support, path reads, and config path helpers.
+Hierarchical application config and lightweight secrets with String, JSON, SecureString, path reads, retries, audit logs, least-privilege IAM, lifecycle, cost, and disaster-recovery patterns.
 
 ## Quick start
 
@@ -11,35 +11,42 @@ cd implementation-by-spec/014-ssm-parameter-store
 pnpm setup
 pnpm seed
 pnpm test
+pnpm typecheck
 pnpm cleanup
 ```
 
-## Module
+## Function map
 
-- `src/client.ts` - SSM SDK v3 client for Floci (`http://localhost:4566`).
-- `src/use-cases/parameters.ts` - string/json parameters, SecureString writes, path reads, config loading, delete, path builders.
-- `src/examples/basic-parameter.ts` - write/read/delete parameter.
-- `src/examples/config-path.ts` - build hierarchical config path and typed holder.
-- `src/examples/load-config.ts` - write parameter then load config by path.
-- `scripts/setup.ts` - creates lab parameters.
-- `scripts/seed.ts` - writes fixture config.
-- `scripts/cleanup.ts` - deletes lab parameters.
-
-## Operations covered
-
-| Operation | Function | Notes |
+| Area | Functions | Enterprise use case |
 |---|---|---|
-| Put string | `putStringParameter` | Writes `String` or `SecureString` with overwrite. |
-| Get string | `getStringParameter` | Reads value, decrypting by default. |
-| Put JSON | `putJsonParameter` | Serializes JSON into parameter value. |
-| Get JSON | `getJsonParameter` | Parses typed JSON parameter. |
-| Read path | `getParametersByPath` | Recursive path read with decryption. |
-| Load config | `loadConfigByPath` | Converts path params into key/value object. |
-| Delete parameter | `deleteParameter` | Idempotent cleanup for missing params. |
-| Build path | `parameterPath` | `/app/env/key` naming helper. |
-| Config holder | `appConfig` | Typed path/value holder. |
+| Basic parameters | `putStringParameter`, `getStringParameter`, `deleteParameter` | Store/read/delete app config and SecureString values. |
+| JSON config | `putJsonParameter`, `getJsonParameter`, `appConfig` | Store typed feature flags or service settings. |
+| Hierarchical config | `parameterPath`, `getParametersByPath`, `loadConfigByPath` | Load `/app/env/*` config in one startup flow. |
+| Resilience | `withParameterStoreRetry`, `getRequiredStringParameter` | Retry throttles and fail fast when required config is missing. |
+| Security/audit | `parameterPathReadPolicy`, `buildParameterAuditLog` | Scope IAM by path/principal tag and log sensitive reads/writes. |
+| Lifecycle/ops | `parameterLifecyclePolicy`, `parameterCostOptimizationPlan`, `parameterDisasterRecoveryPlan` | Plan retention, caching, backup/export, and regional restore. |
+| Runtime config | `seedServiceRuntimeConfig`, `loadServiceRuntimeConfig` | Seed and load complete service config for ECS/Lambda. |
 
-## Use cases
+## Real-world examples
+
+- `src/examples/basic-parameter.ts` - write/read/delete JSON parameter.
+- `src/examples/config-path.ts` - build standard `/app/env/key` paths.
+- `src/examples/load-config.ts` - load path config into object.
+- `src/examples/enterprise-service-config.ts` - seed/load service runtime config with retries, audit, IAM, and cost plan.
+- `src/examples/secure-access-audit.ts` - SecureString access, audit logging, IAM path policy, and lifecycle metadata.
+- `src/examples/event-driven-refresh.ts` - parameter-change event pattern for config-cache refresh.
+- `src/examples/disaster-recovery-cost.ts` - backup/restore, lifecycle, and cost optimization plan.
+
+Run examples with:
+
+```bash
+pnpm tsx src/examples/enterprise-service-config.ts
+pnpm tsx src/examples/secure-access-audit.ts
+pnpm tsx src/examples/event-driven-refresh.ts
+pnpm tsx src/examples/disaster-recovery-cost.ts
+```
+
+## Beginner workflow
 
 ```ts
 import { parameterPath, putJsonParameter, getJsonParameter, loadConfigByPath, deleteParameter } from "./src/index.js";
@@ -51,24 +58,17 @@ console.log(await loadConfigByPath("/orders/dev"));
 await deleteParameter(name);
 ```
 
-## Runbook
+## Production checklist
 
-1. Start Floci: `docker compose up -d`.
-2. Check health: `pnpm run floci:health` from repo root.
-3. Provision parameters: `pnpm setup`.
-4. Seed fixture config: `pnpm seed`.
-5. Run tests: `pnpm test`.
-6. Cleanup parameters: `pnpm cleanup`.
+- Use names like `/app/env/domain/key`; avoid shared flat names.
+- Use SecureString for sensitive values and enforce KMS decrypt permissions separately.
+- Scope IAM to exact path prefixes; use principal/resource tags where possible.
+- Add audit logs for sensitive reads, writes, deletes, denied access, and restores.
+- Cache hot reads and prefer `GetParametersByPath` for startup config to reduce latency/cost.
+- Retry only transient throttling/internal failures; fail fast for missing required config.
+- Export parameters to encrypted, versioned S3 for backup; test restore into DR region/path.
+- Use Secrets Manager for rotation workflows and AppConfig for progressive config rollout.
 
-## Gotchas
+## Floci vs real AWS
 
-- Use consistent hierarchical names: `/app/env/domain/key`.
-- SecureString still needs IAM/KMS controls; do not treat it as magic secrecy.
-- Parameter Store has size/tier limits; use Secrets Manager for rotation workflows.
-- Cache reads in hot paths to reduce latency/cost and avoid throttling.
-- Path IAM can grant broad access; scope prefixes carefully by app/env.
-- JSON parameters are convenient but lose field-level audit/version semantics.
-
-## Floci vs Real AWS
-
-Floci support: **partial** for this lab. On real AWS, configure KMS keys for SecureString, parameter policies/tiering where needed, IAM boundaries by path, CloudTrail audit, caching, and alarms for throttling/errors. Real AWS also has standard/advanced tiers, version history, labels, throughput quotas, parameter policies, and KMS decrypt permissions that local Floci does not fully model.
+Floci support is partial. Real AWS adds SecureString KMS behavior, parameter versions/labels, standard vs advanced tiers, policies, CloudTrail, throughput quotas, and stricter IAM/KMS controls. Keep examples local-friendly, then add production IAM/KMS/CloudWatch/backup automation in real AWS.

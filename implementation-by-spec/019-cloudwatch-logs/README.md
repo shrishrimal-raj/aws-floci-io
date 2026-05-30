@@ -1,6 +1,6 @@
 # 019 - CloudWatch Logs
 
-> Log groups, streams, structured events, retention, filtering, and cleanup.
+Log groups, streams, structured JSON events, retention, filtering, metric/subscription plans, secure audit patterns, cost control, and disaster recovery.
 
 ## Quick start
 
@@ -11,54 +11,63 @@ cd implementation-by-spec/019-cloudwatch-logs
 pnpm setup
 pnpm seed
 pnpm test
+pnpm typecheck
 pnpm cleanup
 ```
 
-## Module
+## Function map
 
-- `src/client.ts` - CloudWatch Logs SDK v3 client for Floci (`http://localhost:4566`).
-- `src/use-cases/logs.ts - group/stream create, retention, JSON events, filters, delete, structured logs.`
-- `src/examples/*` - baseline plus focused runnable examples.
-- `scripts/setup.ts` - provisions lab resources.
-- `scripts/seed.ts` - loads or publishes fixture data.
-- `scripts/cleanup.ts` - tears down lab resources.
-
-## Operations covered
-
-| Operation | Function | Notes |
+| Area | Functions | Enterprise use case |
 |---|---|---|
-| Primary create/config | service helper | Provisions local resource or config. |
-| Publish/send/write | service helper | Exercises main data-plane path. |
-| Read/describe/filter | service helper | Verifies state or output. |
-| Cleanup | delete helper | Idempotent teardown. |
-| Pure helpers | helper functions | Build payloads, filters, templates, or encoded records. |
+| Groups/streams | `createLogGroup`, `createLogStream`, `deleteLogGroup` | Provision and clean app log groups/streams safely. |
+| Events/query | `putJsonLog`, `filterLogs`, `structuredLog` | Write searchable JSON logs and triage incidents by filter pattern. |
+| Naming/filter helpers | `appLogGroupName`, `safeLogStreamName`, `jsonFilterPattern` | Standardize `/aws/app/app/env`, stream names, and JSON filters. |
+| Retention/lifecycle | `putRetentionDays`, `logLifecyclePlan`, `enforceLogRetention` | Enforce dev/prod/regulated retention and export requirements. |
+| Security/audit | `redactSensitiveFields`, `enterpriseApplicationLog`, `buildLogAuditEntry`, `logGroupReadPolicy` | Redact secrets, audit log access, and scope cross-account reads. |
+| Observability/events | `metricFilterPlan`, `subscriptionFilterPlan` | Plan alarms and stream logs to Lambda, Firehose, Kinesis, or OpenSearch. |
+| Resilience/ops | `withCloudWatchLogsRetry`, `logCostOptimizationPlan`, `logDisasterRecoveryPlan` | Retry throttles, reduce ingestion cost, export backups cross-region. |
 
-## Use cases
+## Real-world examples
 
-```ts
-import { /* helpers */ } from "./src/index.js";
+- `src/examples/basic-logs.ts` - create group/stream, write JSON log, clean up.
+- `src/examples/structured-log.ts` - structured app logs, redaction, JSON filter pattern.
+- `src/examples/retention-filter.ts` - lifecycle, error metric, and cost plan.
+- `src/examples/enterprise-observability.ts` - checkout API logs, retry, metric filter, subscription, IAM, audit.
+- `src/examples/security-audit-compliance.ts` - regulated audit logs, redaction, Firehose archive, DR.
+- `src/examples/event-driven-pipeline.ts` - stream fraud-alert logs to event processing pipeline.
 
-await putJsonLog(group, stream, structuredLog("INFO", "order.created", { orderId: "o1" }));
+Run local-only examples:
+
+```bash
+pnpm tsx src/examples/structured-log.ts
+pnpm tsx src/examples/retention-filter.ts
+pnpm tsx src/examples/enterprise-observability.ts
+pnpm tsx src/examples/security-audit-compliance.ts
+pnpm tsx src/examples/event-driven-pipeline.ts
 ```
 
-## Runbook
+## Beginner workflow
 
-1. Start Floci: `docker compose up -d`.
-2. Check health: `pnpm run floci:health` from repo root.
-3. Provision lab resources: `pnpm setup`.
-4. Seed fixtures: `pnpm seed`.
-5. Run tests: `pnpm test`.
-6. Cleanup resources: `pnpm cleanup`.
+```ts
+import { appLogGroupName, createLogGroup, createLogStream, putJsonLog, structuredLog } from "./src/index.js";
 
-## Gotchas
+const group = appLogGroupName("orders-api", "dev");
+await createLogGroup(group);
+await createLogStream(group, "app");
+await putJsonLog(group, "app", structuredLog("INFO", "order.created", { orderId: "o1" }));
+```
 
-- Set retention, subscription filters, metric filters, PII redaction, alarms.
-- Keep handlers idempotent and retry-safe.
-- Use least-privilege IAM for source, target, and management APIs.
-- Add metrics/alarms for failures, throttling, and delivery lag.
-- Clean up dependent resources in correct order.
-- Local emulator behavior can differ from service quotas and async delivery in AWS.
+## Production checklist
 
-## Floci vs Real AWS
+- Use structured JSON fields: `level`, `message`, `time`, `service`, `environment`, `tenantId`, `correlationId`.
+- Redact tokens, passwords, authorization headers, card data, and PII before logging.
+- Set retention for every log group; keep non-prod short and regulated logs longer.
+- Use metric filters/alarms for errors, throttles, auth failures, and delivery lag.
+- Use subscription filters for event-driven processing, security archives, analytics, or incident routing.
+- Scope IAM by log-group prefix and account role; audit sensitive queries and retention changes.
+- Control cost with sampling, lower debug volume, shorter retention, and S3/Firehose archive.
+- Export critical logs to encrypted replicated S3 for backup/disaster recovery.
 
-Floci support: **partial** for this lab. On real AWS, configure production IAM, retries, DLQs or failure destinations where supported, audit logs, alarms, quotas, and cost controls. Real AWS also has regional quotas, IAM policy evaluation, retry semantics, service-specific pricing, and operational metrics that local Floci does not fully model.
+## Floci vs real AWS
+
+Floci support is partial. Real AWS adds strict IAM, quotas, sequence-token behavior, async subscription delivery, cross-account policies, CloudTrail, KMS/S3 exports, and CloudWatch pricing details. Keep examples local-friendly, then add production IAM/KMS/alarms/export automation in real AWS.

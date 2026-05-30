@@ -7,6 +7,10 @@ export interface CheckoutInput {
   amountCents: number;
 }
 
+/**
+ * Returns Step Functions ASL object for checkout saga.
+ * Example: reserve inventory, authorize payment, place order, publish success, compensate failure.
+ */
 export function checkoutStateMachineDefinition(): Record<string, unknown> {
   return {
     Comment: "Commerce checkout saga",
@@ -34,11 +38,16 @@ export function checkoutStateMachineDefinition(): Record<string, unknown> {
   };
 }
 
+/** Counts ASL states; useful for tests and documentation drift checks. */
 export function countStates(definition: Record<string, unknown>): number {
   const states = definition.States;
   return states && typeof states === "object" ? Object.keys(states).length : 0;
 }
 
+/**
+ * Starts checkout state machine execution with safe execution name.
+ * Example: API handler calls this after validating cart and tenant access.
+ */
 export class CheckoutWorkflow {
   constructor(private readonly sfn: SFNClient, private readonly stateMachineArn = process.env.CHECKOUT_STATE_MACHINE_ARN ?? "") {}
 

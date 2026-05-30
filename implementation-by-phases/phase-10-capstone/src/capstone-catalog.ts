@@ -18,14 +18,26 @@ export const CAPSTONE_PROJECTS: CapstoneProject[] = [
   { id: "010", name: "Final Capstone Production Backend", focus: "enterprise", services: ["S3", "SQS", "SNS", "Lambda", "DynamoDB", "Cognito", "ECS", "CloudWatch", "CodeBuild", "KMS"] },
 ];
 
+/**
+ * Returns sorted unique AWS services covered by one or more capstones.
+ * Example: curriculum dashboard shows students which services they practiced across all projects.
+ */
 export function serviceCoverage(projects: CapstoneProject[] = CAPSTONE_PROJECTS): string[] {
   return [...new Set(projects.flatMap((project) => project.services))].sort();
 }
 
+/**
+ * Recommends projects for a learning goal and always includes final enterprise integration.
+ * Example: event-driven learner receives queue/order, ecommerce, and final backend capstones.
+ */
 export function recommendCapstones(goal: CapstoneProject["focus"]): CapstoneProject[] {
   return CAPSTONE_PROJECTS.filter((project) => project.focus === goal || project.focus === "enterprise");
 }
 
+/**
+ * Scores presence of compute, data, operations, and security dimensions from 0-4.
+ * Example: architecture review quickly identifies if a capstone lacks security or observability practice.
+ */
 export function productionReadinessScore(project: CapstoneProject): number {
   const hasCompute = project.services.some((service) => ["Lambda", "ECS"].includes(service));
   const hasData = project.services.some((service) => ["DynamoDB", "S3", "OpenSearch", "Kinesis"].includes(service));

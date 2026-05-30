@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { SSMClient } from "@aws-sdk/client-ssm";
-import { waitForFloci } from "@floci-lab/test-utils";
 import { client } from "../src/client.js";
 import type { SSMParameterStoreError } from "../src/errors.js";
 import { appConfig, getStringParameter, parameterPath, putStringParameter } from "../src/use-cases/parameters.js";
@@ -16,8 +15,6 @@ function failingClient(name: string): SSMClient {
 }
 
 describe("SSM Parameter Store", () => {
-  beforeAll(async () => waitForFloci());
-
   it("client is configured against Floci", () => expect(client).toBeDefined());
 
   it("builds hierarchical paths and typed config holders", () => {

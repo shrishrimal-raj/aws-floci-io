@@ -7,6 +7,11 @@ export class TaskRepository {
     private readonly tableName = process.env.TASKFLOW_TABLE ?? "taskflow"
   ) {}
 
+  /**
+   * Creates task with idempotency-safe conditional write.
+   *
+   * Example: API `POST /tasks` calls this before publishing SNS event; duplicate task IDs fail instead of overwriting tenant data.
+   */
   async create(task: Task): Promise<Task> {
     await this.docClient.send(
       new PutCommand({
@@ -18,6 +23,11 @@ export class TaskRepository {
     return task;
   }
 
+  /**
+   * Reads one task by tenant and task ID.
+   *
+   * Example: `GET /tasks/{taskId}` first validates tenant access, then calls this exact-key lookup for low latency.
+   */
   async get(tenantId: string, taskId: string): Promise<Task | undefined> {
     const result = await this.docClient.send(
       new GetCommand({ TableName: this.tableName, Key: { pk: taskPk(tenantId), sk: taskSk(taskId) } })
@@ -25,6 +35,11 @@ export class TaskRepository {
     return result.Item ? fromItem(result.Item) : undefined;
   }
 
+  /**
+   * Lists all tasks owned by one tenant.
+   *
+   * Example: SaaS dashboard calls this to show only customer-local data under `TENANT#customer-id` partition.
+   */
   async listByTenant(tenantId: string): Promise<Task[]> {
     const result = await this.docClient.send(
       new QueryCommand({
@@ -36,6 +51,11 @@ export class TaskRepository {
     return (result.Items ?? []).map(fromItem);
   }
 
+  /**
+   * Lists tasks by workflow state through GSI.
+   *
+   * Example: operations team queries `in_progress` tasks across tenants for backlog monitoring and SLA reports.
+   */
   async listByStatus(status: TaskStatus): Promise<Task[]> {
     const result = await this.docClient.send(
       new QueryCommand({
@@ -48,6 +68,11 @@ export class TaskRepository {
     return (result.Items ?? []).map(fromItem);
   }
 
+  /**
+   * Updates status and keeps GSI projection current.
+   *
+   * Example: background worker marks task `done`; reporting query immediately moves it from `in_progress` to `done` index bucket.
+   */
   async markStatus(tenantId: string, taskId: string, status: TaskStatus): Promise<void> {
     const updatedAt = new Date().toISOString();
     await this.docClient.send(

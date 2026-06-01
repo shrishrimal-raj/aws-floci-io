@@ -306,7 +306,7 @@ export async function createSingleTable(
       }),
     );
     await waitUntilTableExists(
-      { client: ddb, maxWaitTime: 20 },
+      { client: ddb, maxWaitTime: 20, minDelay: 1, maxDelay: 2 },
       { TableName: name },
     );
   } catch (error) {

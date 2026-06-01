@@ -79,6 +79,22 @@ export interface LambdaCostEstimate {
   totalUsd: number;
 }
 
+export interface LambdaAlarmConfig {
+  name: string;
+  metric: string;
+  threshold: number;
+  comparison: "GT" | "GTE";
+  evaluationPeriods: number;
+  action: string;
+}
+
+export interface BatchInvokeResult<TPayload> {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: TPayload[];
+}
+
 export const defaultZip = new Uint8Array([
   80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]);
@@ -235,6 +251,75 @@ export function estimateLambdaCost(
 }
 
 /**
+ * Redact sensitive environment variable values for safe logging.
+ *
+ * @example
+ * redactSensitiveEnv({ API_KEY: "secret", LOG_LEVEL: "info" });
+ */
+export function redactSensitiveEnv(
+  environment: Record<string, string>,
+): Record<string, string> {
+  const sensitive = /(secret|token|password|key|credential)/i;
+  return Object.fromEntries(
+    Object.entries(environment).map(([key, value]) => [
+      key,
+      sensitive.test(key) ? "***REDACTED***" : value,
+    ]),
+  );
+}
+
+/**
+ * Plan baseline Lambda alarms for production monitoring.
+ *
+ * @example
+ * const alarms = planLambdaAlarms("orders-worker");
+ */
+export function planLambdaAlarms(
+  functionName: string,
+  thresholds: {
+    errorWarning?: number;
+    throttleWarning?: number;
+    durationWarningMs?: number;
+    concurrencyWarning?: number;
+  } = {},
+): LambdaAlarmConfig[] {
+  return [
+    {
+      name: `lambda-${functionName}-errors`,
+      metric: "Errors",
+      threshold: thresholds.errorWarning ?? 1,
+      comparison: "GTE",
+      evaluationPeriods: 1,
+      action: "Investigate logs and downstream dependencies",
+    },
+    {
+      name: `lambda-${functionName}-throttles`,
+      metric: "Throttles",
+      threshold: thresholds.throttleWarning ?? 1,
+      comparison: "GTE",
+      evaluationPeriods: 1,
+      action: "Review reserved concurrency and burst traffic",
+    },
+    {
+      name: `lambda-${functionName}-duration-p95`,
+      metric: "Duration",
+      threshold: thresholds.durationWarningMs ?? 3000,
+      comparison: "GT",
+      evaluationPeriods: 3,
+      action: "Optimize code path, memory, or downstream latency",
+    },
+    {
+      name: `lambda-${functionName}-concurrency`,
+      metric: "ConcurrentExecutions",
+      threshold: thresholds.concurrencyWarning ?? 200,
+      comparison: "GT",
+      evaluationPeriods: 2,
+      action: "Scale controls and retry strategy review",
+    },
+  ];
+}
+
+/**
  * Create a Lambda function with runtime, handler, role, zip, env, timeout, and memory settings.
  *
  * @example
@@ -264,6 +349,19 @@ export async function createFunction(
       return getFunction(spec.name, lambda);
     wrapError("createFunction", error);
   }
+}
+
+/**
+ * Ensure function exists by name; creates if missing and returns metadata.
+ *
+ * @example
+ * await createFunctionIfMissing(serviceFunctionSpec("orders-worker"));
+ */
+export async function createFunctionIfMissing(
+  spec: FunctionSpec,
+  lambda: LambdaClient = defaultClient,
+) {
+  return createFunction(spec, lambda);
 }
 
 /**
@@ -395,6 +493,56 @@ export async function invokeEvent(
   lambda: LambdaClient = defaultClient,
 ): Promise<InvocationResult<null>> {
   return invokeForResult<null>(name, payload, "Event", lambda);
+}
+
+/**
+ * Invoke a function for a batch of payloads and summarize outcomes.
+ *
+ * @example
+ * const summary = await invokeBatchJson("orders-worker", [{ id: 1 }, { id: 2 }]);
+ */
+export async function invokeBatchJson<TPayload = unknown>(
+  name: string,
+  payloads: unknown[],
+  lambda: LambdaClient = defaultClient,
+): Promise<BatchInvokeResult<TPayload>> {
+  const results: TPayload[] = [];
+  let failed = 0;
+
+  for (const payload of payloads) {
+    try {
+      const value = await invokeJson<TPayload>(name, payload, lambda);
+      results.push(value);
+    } catch {
+      failed += 1;
+    }
+  }
+
+  return {
+    total: payloads.length,
+    succeeded: results.length,
+    failed,
+    results,
+  };
+}
+
+/**
+ * Invoke synchronously and create a standardized audit event payload.
+ *
+ * @example
+ * const out = await invokeAndAudit("orders-api", { orderId: "o1" }, { action: "CreateOrder", outcome: "SUCCESS" });
+ */
+export async function invokeAndAudit<TPayload = unknown>(
+  name: string,
+  payload: unknown,
+  audit: Omit<LambdaAuditEvent, "eventId" | "timestamp" | "functionName">,
+  lambda: LambdaClient = defaultClient,
+): Promise<{ result: InvocationResult<TPayload>; audit: LambdaAuditEvent }> {
+  const result = await invokeForResult<TPayload>(name, payload, "RequestResponse", lambda);
+  return {
+    result,
+    audit: createLambdaAuditEvent({ functionName: name, ...audit }),
+  };
 }
 
 /**

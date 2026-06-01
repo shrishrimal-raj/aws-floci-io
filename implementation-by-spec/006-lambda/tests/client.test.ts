@@ -1,17 +1,25 @@
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { LambdaClient } from "@aws-sdk/client-lambda";
 import { waitForFloci } from "@floci-lab/test-utils";
 import { client } from "../src/client.js";
 import type { LambdaError } from "../src/errors.js";
 import {
+  createFunction,
+  deleteFunction,
+  getFunction,
   createLambdaAuditEvent,
   estimateLambdaCost,
   handlerErrorResponse,
   handlerResponse,
+  invokeAndAudit,
+  invokeBatchJson,
+  invokeEvent,
   invokeForResult,
   invokeJson,
   invokeJsonWithRetry,
   parseApiJsonBody,
+  planLambdaAlarms,
+  redactSensitiveEnv,
   requestContext,
   secureJsonResponse,
   serviceFunctionSpec,
@@ -38,8 +46,19 @@ function payloadClient(payload: unknown): LambdaClient {
 }
 
 describe("Lambda", () => {
+  const integrationFunctionName = `floci-lambda-test-${Date.now()}`;
+
   beforeAll(async () => {
     await waitForFloci();
+    await createFunction(serviceFunctionSpec(integrationFunctionName));
+  }, 30000);
+
+  afterAll(async () => {
+    try {
+      await deleteFunction(integrationFunctionName);
+    } catch {
+      // Floci may be offline during local runs; ignore teardown connectivity errors.
+    }
   });
 
   it("client is configured against Floci", () => {
@@ -102,6 +121,13 @@ describe("Lambda", () => {
         memoryMb: 512,
       }).billableRequests,
     ).toBe(1_000_000);
+
+    expect(redactSensitiveEnv({ API_TOKEN: "x", LOG_LEVEL: "info" })).toEqual({
+      API_TOKEN: "***REDACTED***",
+      LOG_LEVEL: "info",
+    });
+
+    expect(planLambdaAlarms("orders-worker")).toHaveLength(4);
   });
 
   it("parses JSON invocation payloads", async () => {
@@ -130,6 +156,32 @@ describe("Lambda", () => {
         payloadClient({ ok: true }),
       ),
     ).resolves.toEqual({ ok: true });
+
+    await expect(
+      invokeEvent("fn", { ping: true }, payloadClient(null)),
+    ).resolves.toMatchObject({ statusCode: 200 });
+
+    await expect(
+      invokeBatchJson<{ ok: boolean }>(
+        "fn",
+        [{ ping: 1 }, { ping: 2 }],
+        payloadClient({ ok: true }),
+      ),
+    ).resolves.toMatchObject({ total: 2, succeeded: 2, failed: 0 });
+
+    await expect(
+      invokeAndAudit<{ ok: boolean }>(
+        "fn",
+        { ping: true },
+        { action: "Ping", outcome: "SUCCESS" },
+        payloadClient({ ok: true }),
+      ),
+    ).resolves.toMatchObject({ result: { payload: { ok: true } }, audit: { action: "Ping" } });
+  });
+
+  it("creates and reads a function in Floci", async () => {
+    const fn = await getFunction(integrationFunctionName);
+    expect(fn.Configuration?.FunctionName).toBe(integrationFunctionName);
   });
 
   it("wraps SDK invoke failures in LambdaError", async () => {
@@ -152,5 +204,10 @@ describe("Lambda", () => {
       code: "LAMBDA_AccessDeniedException",
       message: "Lambda updateFunctionCode failed",
     } satisfies Partial<LambdaError>);
+  });
+  it("throws validation error for malformed API body", () => {
+    expect(() => parseApiJsonBody({ body: "not-json" })).toThrowError(
+      "request body must be valid JSON",
+    );
   });
 });

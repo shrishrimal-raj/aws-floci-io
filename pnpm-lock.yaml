@@ -33,37 +33,6 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.19)
 
-  aws-cloudfolks/01-ec2/01-create-windows-ec2-instance/implementation:
-    dependencies:
-      '@aws-sdk/client-ec2':
-        specifier: ^3.700.0
-        version: 3.1055.0
-      '@floci-lab/aws-clients':
-        specifier: workspace:*
-        version: link:../../../../shared/aws-clients
-      '@floci-lab/errors':
-        specifier: workspace:*
-        version: link:../../../../shared/errors
-      '@floci-lab/logger':
-        specifier: workspace:*
-        version: link:../../../../shared/logger
-      '@floci-lab/test-utils':
-        specifier: workspace:*
-        version: link:../../../../shared/test-utils
-    devDependencies:
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.19.19
-      tsx:
-        specifier: ^4.19.0
-        version: 4.22.3
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.19.19)
-
   implementation-by-phases/phase-00-foundation:
     dependencies:
       '@aws-sdk/client-dynamodb':

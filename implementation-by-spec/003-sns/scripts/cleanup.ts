@@ -6,10 +6,14 @@ import { createTopic, deleteTopic, listSubscriptions, unsubscribe } from "../src
 const topicName = process.env.SNS_TOPIC_NAME ?? "floci-sns-lab";
 const fifoTopicName = process.env.SNS_FIFO_TOPIC_NAME ?? "floci-sns-lab.fifo";
 const sinkQueueName = process.env.SNS_SINK_QUEUE_NAME ?? "floci-sns-lab-sink";
+const complianceTopicName = process.env.SNS_COMPLIANCE_TOPIC_NAME ?? "floci-sns-compliance-lab";
+const drTopicName = process.env.SNS_DR_TOPIC_NAME ?? "floci-sns-dr-lab";
 
 for (const topicArn of [
   await createTopic({ name: topicName }),
   await createTopic({ name: fifoTopicName, fifo: true }),
+  await createTopic({ name: complianceTopicName }),
+  await createTopic({ name: drTopicName }),
 ]) {
   for (const subscription of await listSubscriptions(topicArn)) {
     await unsubscribe(subscription.SubscriptionArn);

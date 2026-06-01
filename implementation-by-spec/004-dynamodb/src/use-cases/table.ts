@@ -1,4 +1,6 @@
 import {
+  BatchGetItemCommand,
+  BatchWriteItemCommand,
   CreateTableCommand,
   DeleteItemCommand,
   DeleteTableCommand,
@@ -627,6 +629,58 @@ export async function queryGsi(
     );
   } catch (error) {
     wrapError("queryGsi", error);
+   }
+}
+
+/**
+ * Batch get items from multiple tables in a single call.
+ * Efficient for retrieving multiple items without multiple round trips.
+ *
+ * @example
+ * const response = await batchGetItem({
+ *   [tableName]: {
+ *     Keys: [
+ *       { pk: { S: "USER#1" }, sk: { S: "PROFILE" } },
+ *       { pk: { S: "USER#2" }, sk: { S: "PROFILE" } }
+ *     ]
+ *   }
+ * });
+ */
+export async function batchGetItem(
+  requestItems: Record<string, { Keys: Item[]; AttributesToGet?: string[]; ConsistentRead?: boolean }>,
+  name = tableName,
+  ddb: DynamoDBClient = defaultClient,
+) {
+  try {
+    const cmd = new BatchGetItemCommand({ RequestItems: requestItems });
+    return await ddb.send(cmd);
+  } catch (error) {
+    wrapError("batchGetItem", error);
+  }
+}
+
+/**
+ * Batch write items (put/delete) to multiple tables in a single call.
+ * Efficient for bulk loading or deleting data.
+ *
+ * @example
+ * await batchWriteItem({
+ *   [tableName]: [
+ *     { PutRequest: { Item: { pk: { S: "USER#1" }, sk: { S: "PROFILE" }, name: { S: "Ada" } } } },
+ *     { DeleteRequest: { Key: { pk: { S: "USER#2" }, sk: { S: "PROFILE" } } } }
+ *   ]
+ * });
+ */
+export async function batchWriteItem(
+  requestItems: Record<string, ({ PutRequest: { Item: Item } } | { DeleteRequest: { Key: Item } })[]>,
+  name = tableName,
+  ddb: DynamoDBClient = defaultClient,
+) {
+  try {
+    const cmd = new BatchWriteItemCommand({ RequestItems: requestItems });
+    return await ddb.send(cmd);
+  } catch (error) {
+    wrapError("batchWriteItem", error);
   }
 }
 

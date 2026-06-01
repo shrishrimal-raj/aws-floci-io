@@ -1,10 +1,17 @@
 import {
+  AddPermissionCommand,
   CreateTopicCommand,
+  GetTopicAttributesCommand,
+  ListTagsForResourceCommand,
   DeleteTopicCommand,
   ListSubscriptionsByTopicCommand,
   PublishCommand,
+  RemovePermissionCommand,
+  SetTopicAttributesCommand,
   SetSubscriptionAttributesCommand,
   SubscribeCommand,
+  TagResourceCommand,
+  UntagResourceCommand,
   UnsubscribeCommand,
   type MessageAttributeValue,
   type SNSClient,
@@ -79,6 +86,28 @@ export interface SnsPublishCostEstimateInput {
 export interface SnsPublishCostEstimate {
   billablePublishes: number;
   publishUsd: number;
+}
+
+export interface SnsFanoutCostEstimateInput {
+  publishes: number;
+  averageDeliveriesPerPublish: number;
+  freeTierRequests?: number;
+  usdPerMillionRequests?: number;
+}
+
+export interface SnsFanoutCostEstimate {
+  totalRequests: number;
+  billableRequests: number;
+  requestUsd: number;
+}
+
+export interface SnsAlarmConfig {
+  name: string;
+  metric: string;
+  threshold: number;
+  comparison: "GT" | "GTE";
+  evaluationPeriods: number;
+  action: string;
 }
 
 export interface RetryOptions {
@@ -231,6 +260,129 @@ export function estimateSnsPublishCost(
 }
 
 /**
+ * Estimate total SNS request cost including fanout deliveries.
+ * Requests ~= publishes + deliveries (deliveries = publishes * average subscribers matched).
+ *
+ * @example
+ * estimateSnsFanoutCost({ publishes: 5_000_000, averageDeliveriesPerPublish: 3 });
+ */
+export function estimateSnsFanoutCost(
+  input: SnsFanoutCostEstimateInput,
+): SnsFanoutCostEstimate {
+  const totalRequests = Math.max(
+    0,
+    Math.floor(input.publishes * (1 + input.averageDeliveriesPerPublish)),
+  );
+  const billableRequests = Math.max(
+    0,
+    totalRequests - (input.freeTierRequests ?? 1_000_000),
+  );
+  const requestUsd =
+    (billableRequests / 1_000_000) * (input.usdPerMillionRequests ?? 0.5);
+  return { totalRequests, billableRequests, requestUsd };
+}
+
+/**
+ * Build topic attributes for compliance-sensitive workloads.
+ *
+ * @example
+ * const attrs = buildComplianceTopicAttributes("alias/pii-events-key");
+ */
+export function buildComplianceTopicAttributes(
+  kmsMasterKeyId: string,
+  options: { displayName?: string; enforceSslOnlyPolicy?: boolean } = {},
+): Record<string, string> {
+  const attributes: Record<string, string> = {
+    KmsMasterKeyId: kmsMasterKeyId,
+  };
+
+  if (options.displayName) attributes.DisplayName = options.displayName;
+
+  if (options.enforceSslOnlyPolicy) {
+    attributes.Policy = JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Sid: "DenyInsecureTransport",
+          Effect: "Deny",
+          Principal: "*",
+          Action: "sns:*",
+          Resource: "*",
+          Condition: { Bool: { "aws:SecureTransport": "false" } },
+        },
+      ],
+    });
+  }
+
+  return attributes;
+}
+
+/**
+ * Build practical alarm definitions for SNS operational monitoring.
+ *
+ * @example
+ * const alarms = planSnsAlarms("orders-events");
+ */
+export function planSnsAlarms(
+  topicName: string,
+  thresholds: {
+    publishFailureWarning?: number;
+    notificationFailureWarning?: number;
+    highPublishRateWarning?: number;
+  } = {},
+): SnsAlarmConfig[] {
+  return [
+    {
+      name: `sns-${topicName}-publish-failures`,
+      metric: "NumberOfMessagesFailed",
+      threshold: thresholds.publishFailureWarning ?? 1,
+      comparison: "GTE",
+      evaluationPeriods: 1,
+      action: "Investigate publisher errors and IAM/topic policy",
+    },
+    {
+      name: `sns-${topicName}-delivery-failures`,
+      metric: "NumberOfNotificationsFailed",
+      threshold: thresholds.notificationFailureWarning ?? 1,
+      comparison: "GTE",
+      evaluationPeriods: 1,
+      action: "Check subscriber endpoint health, DLQ, and retry behavior",
+    },
+    {
+      name: `sns-${topicName}-publish-rate`,
+      metric: "NumberOfMessagesPublished",
+      threshold: thresholds.highPublishRateWarning ?? 10_000,
+      comparison: "GT",
+      evaluationPeriods: 3,
+      action: "Validate burst expected; review fanout cost and throttling limits",
+    },
+    {
+      name: `sns-${topicName}-sms-spend`,
+      metric: "SMSSuccessRate",
+      threshold: 95,
+      comparison: "GT",
+      evaluationPeriods: 1,
+      action: "Pair with SNS SMS spend alarms for budget protection",
+    },
+  ];
+}
+
+/**
+ * Validate that tenant isolation is present in filter policies.
+ *
+ * @example
+ * validateTenantFilterPolicy({ tenantId: ["acme"] }, "acme");
+ */
+export function validateTenantFilterPolicy(
+  filterPolicy: Record<string, unknown>,
+  tenantId: string,
+): boolean {
+  const allowed = filterPolicy.tenantId;
+  if (!Array.isArray(allowed)) return false;
+  return allowed.some((value) => String(value) === tenantId);
+}
+
+/**
  * Create a standard or FIFO pub/sub topic.
  *
  * @example
@@ -270,6 +422,174 @@ export async function deleteTopic(
   } catch (error) {
     if (awsErrorName(error) === "NotFound") return;
     wrapError("deleteTopic", error);
+  }
+}
+
+/**
+ * Read topic attributes for operational checks and compliance assertions.
+ *
+ * @example
+ * const attrs = await getTopicAttributes(topicArn);
+ */
+export async function getTopicAttributes(
+  topicArn: string,
+  sns: SNSClient = defaultClient,
+): Promise<Record<string, string>> {
+  try {
+    const result = await sns.send(
+      new GetTopicAttributesCommand({ TopicArn: topicArn }),
+    );
+    return result.Attributes ?? {};
+  } catch (error) {
+    wrapError("getTopicAttributes", error);
+  }
+}
+
+/**
+ * Set topic attributes such as display name, policy, or KMS key.
+ *
+ * @example
+ * await setTopicAttributes(topicArn, { DisplayName: "Orders Events" });
+ */
+export async function setTopicAttributes(
+  topicArn: string,
+  attributes: Record<string, string>,
+  sns: SNSClient = defaultClient,
+): Promise<void> {
+  try {
+    for (const [name, value] of Object.entries(attributes)) {
+      await sns.send(
+        new SetTopicAttributesCommand({
+          TopicArn: topicArn,
+          AttributeName: name,
+          AttributeValue: value,
+        }),
+      );
+    }
+  } catch (error) {
+    wrapError("setTopicAttributes", error);
+  }
+}
+
+/**
+ * Add resource tags for cost allocation and governance.
+ *
+ * @example
+ * await tagTopic(topicArn, { Environment: "prod", CostCenter: "billing" });
+ */
+export async function tagTopic(
+  topicArn: string,
+  tags: Record<string, string>,
+  sns: SNSClient = defaultClient,
+): Promise<void> {
+  try {
+    await sns.send(
+      new TagResourceCommand({
+        ResourceArn: topicArn,
+        Tags: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })),
+      }),
+    );
+  } catch (error) {
+    wrapError("tagTopic", error);
+  }
+}
+
+/**
+ * List topic tags.
+ *
+ * @example
+ * const tags = await listTopicTags(topicArn);
+ */
+export async function listTopicTags(
+  topicArn: string,
+  sns: SNSClient = defaultClient,
+): Promise<Record<string, string>> {
+  try {
+    const result = await sns.send(
+      new ListTagsForResourceCommand({ ResourceArn: topicArn }),
+    );
+    return Object.fromEntries(
+      (result.Tags ?? [])
+        .filter((tag): tag is { Key: string; Value: string } =>
+          Boolean(tag.Key && tag.Value),
+        )
+        .map((tag) => [tag.Key, tag.Value]),
+    );
+  } catch (error) {
+    wrapError("listTopicTags", error);
+  }
+}
+
+/**
+ * Remove selected topic tags.
+ *
+ * @example
+ * await untagTopic(topicArn, ["Owner"]);
+ */
+export async function untagTopic(
+  topicArn: string,
+  tagKeys: string[],
+  sns: SNSClient = defaultClient,
+): Promise<void> {
+  try {
+    await sns.send(
+      new UntagResourceCommand({
+        ResourceArn: topicArn,
+        TagKeys: tagKeys,
+      }),
+    );
+  } catch (error) {
+    wrapError("untagTopic", error);
+  }
+}
+
+/**
+ * Add topic resource policy permissions for explicit AWS account IDs and actions.
+ *
+ * @example
+ * await addTopicPermission(topicArn, "cross-account-publish", ["123456789012"], ["Publish"]);
+ */
+export async function addTopicPermission(
+  topicArn: string,
+  label: string,
+  awsAccountIds: string[],
+  actions: string[],
+  sns: SNSClient = defaultClient,
+): Promise<void> {
+  try {
+    await sns.send(
+      new AddPermissionCommand({
+        TopicArn: topicArn,
+        Label: label,
+        AWSAccountId: awsAccountIds,
+        ActionName: actions,
+      }),
+    );
+  } catch (error) {
+    wrapError("addTopicPermission", error);
+  }
+}
+
+/**
+ * Remove topic permission statement previously created by label.
+ *
+ * @example
+ * await removeTopicPermission(topicArn, "cross-account-publish");
+ */
+export async function removeTopicPermission(
+  topicArn: string,
+  label: string,
+  sns: SNSClient = defaultClient,
+): Promise<void> {
+  try {
+    await sns.send(
+      new RemovePermissionCommand({
+        TopicArn: topicArn,
+        Label: label,
+      }),
+    );
+  } catch (error) {
+    wrapError("removeTopicPermission", error);
   }
 }
 

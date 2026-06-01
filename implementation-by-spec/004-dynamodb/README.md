@@ -26,6 +26,7 @@ pnpm cleanup
 - `src/examples/event-driven-outbox.ts` - outbox pattern for DynamoDB Streams + SNS/EventBridge.
 - `src/examples/session-lifecycle-cleanup.ts` - explicit partition cleanup for sessions/offboarding.
 - `src/examples/observability-cost-dr.ts` - describe/scan admin view, cost estimate, monitoring/DR notes.
+- `src/examples/batch-operations.ts` - efficient batch reads/writes for bulk data processing.
 - `scripts/setup.ts` - creates `floci-ddb-lab` with `pk/sk`, `gsi1`, and streams enabled.
 - `scripts/seed.ts` - writes fixture user/order data.
 - `scripts/cleanup.ts` - deletes lab table.
@@ -40,6 +41,7 @@ pnpm cleanup
 | JSON entities   | `putJsonEntity`, `putJsonEntityIfAbsent`, `getJsonEntity`                | Typed app objects converted to DynamoDB attributes.        |
 | Retry update    | `updateJsonPatchWithRetry`                                               | Bounded retry for throttling/transient update failures.    |
 | Queries         | `queryByPk`, `queryByPkPage`, `queryAllByPk`, `queryGsi`                 | Main and alternate access patterns with pagination.        |
+| Batch I/O       | `batchGetItem`, `batchWriteItem`                                         | Bulk read/write patterns to reduce network round trips.    |
 | Admin/lifecycle | `scanAll`, `deleteItemsByPk`                                             | Lab/admin scans and tenant/session cleanup jobs.           |
 | Audit/cost      | `auditEntity`, `estimateDynamoDbCost`                                    | Compliance event item builder and simple cost estimate.    |
 

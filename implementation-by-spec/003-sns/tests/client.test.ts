@@ -10,23 +10,34 @@ import { awsDefaults } from "@floci-lab/aws-clients";
 import { client } from "../src/client.js";
 import type { SNSError } from "../src/errors.js";
 import {
+  addTopicPermission,
+  buildComplianceTopicAttributes,
   createTopic,
   createTopicAuditEvent,
   deleteTopic,
+  estimateSnsFanoutCost,
   estimateSnsPublishCost,
   fifoEventIds,
+  getTopicAttributes,
   listSubscriptions,
+  listTopicTags,
   parseTopicEventEnvelope,
+  planSnsAlarms,
   publishFifoJsonEvent,
   publishJsonEvent,
   publishMessage,
   publishMessageWithRetry,
+  removeTopicPermission,
+  setTopicAttributes,
   setSubscriptionFilterPolicy,
   subscribe,
   subscribeSqsWithFilter,
   summarizeSubscriptions,
+  tagTopic,
   topicMessageAttributes,
+  untagTopic,
   unsubscribe,
+  validateTenantFilterPolicy,
 } from "../src/use-cases/topics.js";
 import { waitForFloci } from "@floci-lab/test-utils";
 
@@ -72,7 +83,7 @@ describe("SNS", () => {
       }),
     );
     queueArn = attrs.Attributes?.QueueArn ?? "";
-  });
+  }, 30_000);
 
   afterAll(async () => {
     await unsubscribe(subscriptionArn);
@@ -179,6 +190,85 @@ describe("SNS", () => {
     const estimate = estimateSnsPublishCost({ publishes: 2_000_000 });
     expect(estimate.billablePublishes).toBe(1_000_000);
     expect(estimate.publishUsd).toBeCloseTo(0.5);
+
+    const fanout = estimateSnsFanoutCost({
+      publishes: 2_000_000,
+      averageDeliveriesPerPublish: 2,
+    });
+    expect(fanout.totalRequests).toBe(6_000_000);
+    expect(fanout.billableRequests).toBe(5_000_000);
+
+    expect(
+      validateTenantFilterPolicy({ tenantId: ["tenant-1", "tenant-2"] }, "tenant-1"),
+    ).toBe(true);
+    expect(validateTenantFilterPolicy({ eventType: ["x"] }, "tenant-1")).toBe(
+      false,
+    );
+
+    const complianceAttrs = buildComplianceTopicAttributes("alias/pii-key", {
+      displayName: "pii-events",
+      enforceSslOnlyPolicy: true,
+    });
+    expect(complianceAttrs.KmsMasterKeyId).toBe("alias/pii-key");
+    expect(complianceAttrs.DisplayName).toBe("pii-events");
+    expect(complianceAttrs.Policy).toContain("DenyInsecureTransport");
+
+    const alarms = planSnsAlarms("orders-events");
+    expect(alarms).toHaveLength(4);
+    expect(alarms[0]?.name).toContain("publish-failures");
+  });
+
+  it("manages topic attributes, tags, and permissions via SNS API", async () => {
+    const mocked = {
+      send: vi.fn(async (command: object) => {
+        const name = command.constructor.name;
+        if (name === "GetTopicAttributesCommand") {
+          return { Attributes: { DisplayName: "orders-events" } };
+        }
+        if (name === "ListTagsForResourceCommand") {
+          return {
+            Tags: [
+              { Key: "Environment", Value: "prod" },
+              { Key: "TenantId", Value: "tenant-1" },
+            ],
+          };
+        }
+        return {};
+      }),
+    } as unknown as SNSClient;
+
+    await expect(
+      setTopicAttributes(topicArn, { DisplayName: "orders-events" }, mocked),
+    ).resolves.toBeUndefined();
+
+    await expect(tagTopic(topicArn, { Environment: "prod" }, mocked)).resolves
+      .toBeUndefined();
+
+    await expect(untagTopic(topicArn, ["Environment"], mocked)).resolves
+      .toBeUndefined();
+
+    await expect(
+      addTopicPermission(
+        topicArn,
+        "allow-external-publish",
+        ["123456789012"],
+        ["Publish"],
+        mocked,
+      ),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      removeTopicPermission(topicArn, "allow-external-publish", mocked),
+    ).resolves.toBeUndefined();
+
+    await expect(getTopicAttributes(topicArn, mocked)).resolves.toEqual({
+      DisplayName: "orders-events",
+    });
+
+    await expect(listTopicTags(topicArn, mocked)).resolves.toEqual({
+      Environment: "prod",
+      TenantId: "tenant-1",
+    });
   });
 
   it("wraps SDK create failures in SNSError", async () => {

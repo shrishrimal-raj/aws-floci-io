@@ -1,6 +1,6 @@
 services:
   floci:
-    image: ghcr.io/floci-io/floci:latest
+    image: floci/floci:latest
     container_name: floci
     ports:
       - "4566:4566"
@@ -42,10 +42,14 @@ services:
       - DISABLE_SECURITY_PLUGIN=true
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin#12345
       - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
 
   floci-ui:
-    image: floci/floci-ui:latest
+    image: floci-ui:local
     container_name: floci-ui
     ports:
       - "3000:3000"

@@ -22,7 +22,9 @@ import {
   putJsonObject,
   putLifecycleExpirationRule,
   putObject,
+  parseS3Uri,
   putObjectWithRetry,
+  s3Uri,
   tenantObjectKey,
   writeAuditLogEntry,
   writeBackupManifest,
@@ -144,6 +146,16 @@ describe("S3", () => {
       "application/octet-stream",
     );
     expect(session.putUrl).toContain("X-Amz-Signature");
+  });
+
+  it("builds and parses S3 URIs for integration payloads", () => {
+    const uri = s3Uri(bucket, "/tenants/acme/contracts/msa.pdf");
+    expect(uri).toBe(`s3://${bucket}/tenants/acme/contracts/msa.pdf`);
+    expect(parseS3Uri(uri)).toEqual({
+      bucket,
+      key: "tenants/acme/contracts/msa.pdf",
+    });
+    expect(() => parseS3Uri("https://example.com/file")).toThrow();
   });
 
   it("builds secure tenant upload sessions", async () => {

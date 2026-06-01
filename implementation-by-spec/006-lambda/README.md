@@ -17,7 +17,7 @@ pnpm cleanup
 ## Module
 
 - `src/client.ts` - Lambda SDK v3 client for Floci (`http://localhost:4566`).
-- `src/use-cases/functions.ts` - function lifecycle, sync/async invocation, retries, API helpers, audit, request context, cost.
+- `src/use-cases/functions.ts` - function lifecycle, sync/async invocation, retries, API helpers, audit, request context, alarms, redaction, and cost.
 - `src/examples/invoke-function.ts` - create, invoke, delete.
 - `src/examples/async-invoke.ts` - `InvocationType: Event` flow.
 - `src/examples/api-response.ts` - basic API Gateway-style responses.
@@ -26,20 +26,24 @@ pnpm cleanup
 - `src/examples/event-driven-pipeline.ts` - S3/EventBridge-style async pipeline.
 - `src/examples/observability-cost.ts` - audit event, metrics to watch, monthly cost estimate.
 - `src/examples/compliance-maintenance-job.ts` - scheduled compliance/maintenance job pattern.
-- `scripts/setup.ts` - creates lab function.
-- `scripts/seed.ts` - invokes fixture payload.
-- `scripts/cleanup.ts` - deletes lab function.
+- `src/examples/integration-api-sqs-lambda.ts` - API Lambda + async worker integration pattern.
+- `src/examples/backup-dr-restore-runbook.ts` - stateless Lambda DR restore and replay runbook.
+- `src/examples/compliance-secrets-and-redaction.ts` - sensitive env handling and redacted logging pattern.
+- `scripts/setup.ts` - creates API, worker, and compliance lab functions.
+- `scripts/seed.ts` - invokes realistic API/worker/compliance fixture payloads.
+- `scripts/cleanup.ts` - deletes all created lab functions.
 
 ## Operations covered
 
 | Operation       | Function                                                                | Notes                                                          |
 | --------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------- |
 | Function spec   | `serviceFunctionSpec`                                                   | Standard runtime, handler, env, timeout, memory defaults.      |
-| Lifecycle       | `createFunction`, `getFunction`, `updateFunctionCode`, `deleteFunction` | Create/read/update/delete Lambda functions.                    |
+| Lifecycle       | `createFunction`, `createFunctionIfMissing`, `getFunction`, `updateFunctionCode`, `deleteFunction` | Create/read/update/delete Lambda functions.                    |
 | Invoke          | `invokeJson`, `invokeForResult`, `invokeEvent`, `invokeJsonWithRetry`   | Sync, detailed result, async event, retry wrapper.             |
+| Invoke batches  | `invokeBatchJson`, `invokeAndAudit`                                     | Batch-style invocation summary and standardized audit wrapping. |
 | API helpers     | `handlerResponse`, `handlerErrorResponse`, `secureJsonResponse`         | JSON responses, safe errors, CORS/security headers.            |
 | Request helpers | `parseApiJsonBody`, `requestContext`                                    | Validate JSON body and extract request/tenant/trace context.   |
-| Audit/cost      | `createLambdaAuditEvent`, `estimateLambdaCost`                          | Structured audit payloads and simple request/compute estimate. |
+| Audit/ops/cost  | `createLambdaAuditEvent`, `planLambdaAlarms`, `redactSensitiveEnv`, `estimateLambdaCost` | Audit payloads, alarm hints, safe config logging, and cost estimate. |
 
 ## Function examples
 
@@ -100,11 +104,11 @@ const cost = estimateLambdaCost({
 
 1. Start Floci: `docker compose up -d`.
 2. Check health: `pnpm run floci:health` from repo root.
-3. Provision lab function: `pnpm setup`.
-4. Invoke fixture payload: `pnpm seed`.
+3. Provision lab functions: `pnpm setup`.
+4. Invoke fixture payloads: `pnpm seed`.
 5. Run tests: `pnpm test`.
 6. Run examples: `pnpm exec tsx src/examples/<file>.ts`.
-7. Cleanup function: `pnpm cleanup`.
+7. Cleanup functions: `pnpm cleanup`.
 
 ## Testing guidance
 

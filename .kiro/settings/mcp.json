@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "codegraph": {
+      "command": "codegraph",
+      "args": [
+        "serve",
+        "--mcp"
+      ],
+      "disabled": false,
+      "autoApprove": [
+        "codegraph_status",
+        "codegraph_files",
+        "codegraph_search",
+        "codegraph_context",
+        "codegraph_callers",
+        "codegraph_callees",
+        "codegraph_impact",
+        "codegraph_node",
+        "codegraph_trace",
+        "codegraph_explore"
+      ]
+    }
+  }
+}

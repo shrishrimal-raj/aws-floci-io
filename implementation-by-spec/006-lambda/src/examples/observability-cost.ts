@@ -2,6 +2,8 @@
 import {
   createLambdaAuditEvent,
   estimateLambdaCost,
+  planLambdaAlarms,
+  redactSensitiveEnv,
   serviceFunctionSpec,
 } from "../use-cases/functions.js";
 
@@ -28,6 +30,8 @@ console.log({
     traceId: "trace-123",
   }),
   cost,
+  redactedEnvironment: redactSensitiveEnv(spec.environment ?? {}),
+  alarms: planLambdaAlarms(spec.name, { durationWarningMs: 1500 }),
   monitoring: [
     "Errors",
     "Duration",

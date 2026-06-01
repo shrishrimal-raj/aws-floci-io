@@ -1,12 +1,5 @@
 #!/usr/bin/env tsx
-import {
-  createBucket,
-  deleteBucket,
-  getJsonObject,
-  putJsonObject,
-  writeAuditLogEntry,
-  type AuditLogEntry,
-} from "../use-cases/object-storage.js";
+import { createBucket, deleteBucket, getJsonObject, putJsonObject, writeAuditLogEntry, type AuditLogEntry } from "../use-cases/object-storage.js";
 
 const dataBucket = `floci-s3-compliance-data-${Date.now()}`;
 const auditBucket = `floci-s3-compliance-audit-${Date.now()}`;
@@ -39,8 +32,7 @@ await writeAuditLogEntry(auditBucket, auditEntry);
 console.log({
   document: await getJsonObject(dataBucket, documentKey),
   auditEvent: auditEntry,
-  control:
-    "every sensitive object access creates tenant/date-partitioned audit JSON",
+  control: "every sensitive object access creates tenant/date-partitioned audit JSON",
 });
 
 await deleteBucket(dataBucket);
